@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1045 &1
+EditorBuildSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Scenes:
+  - enabled: 1
+    path: Assets/Scenes/Level6_Jungle.unity
+    guid: a3ba1bdd52544be4abe6dd6e3290c89c
+  - enabled: 1
+    path: Assets/Scenes/Level5_Pyramid.unity
+    guid: 4052767fc3a09cf449b97257e8e5258d
+  - enabled: 1
+    path: Assets/Scenes/Level4_School.unity
+    guid: 5ab860c380fd50d4bab81e4fc9966c23
+  - enabled: 1
+    path: Assets/Scenes/Level3_Town.unity
+    guid: 4be761a53d999a848a83be987e6ef10d
+  - enabled: 1
+    path: Assets/Scenes/Level2_Forest.unity
+    guid: 7e261bcad2187554da50e1d5178b7d14
+  - enabled: 1
+    path: Assets/Scenes/Level1_House.unity
+    guid: 9be3e67fdffce3d4dac120164e82092b
+  m_configObjects: {}
