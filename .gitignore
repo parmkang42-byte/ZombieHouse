@@ -105,3 +105,11 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# ---------------------------------------------------------------------------
+# Project-specific (added 2026-09-03)
+# ---------------------------------------------------------------------------
+# Blender runs Tools_Props/*.py and leaves compiled bytecode behind. It is a
+# binary build artifact of a text file that is already committed.
+__pycache__/
+*.pyc
