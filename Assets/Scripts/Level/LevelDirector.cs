@@ -27,6 +27,19 @@ namespace ZombieHouse.Level
         [Header("Zombie")]
         [SerializeField] private GameObject zombiePrefab;
 
+        [Header("Boss")]
+        [Tooltip("The giant that guards the way out. Left empty, the level simply has no "
+                 + "boss and the exit opens on the usual three conditions.")]
+        [SerializeField] private GameObject bossPrefab;
+
+        [Tooltip("Which archetype it wears. The scale, health and reach all come from "
+                 + "there, so one ordinary prefab serves as its own boss.")]
+        [SerializeField] private ZombieKind bossKind = ZombieKind.BossZombie;
+
+        [Tooltip("How far from the exit it waits. Far enough that it is not standing in "
+                 + "the doorway, close enough that reaching the exit means meeting it.")]
+        [SerializeField] private float bossStandoff = 7f;
+
         [Header("Pickup amounts")]
         [SerializeField] private int ammoPerBox = 24;
         [SerializeField] private int healthPerMedkit = 40;
@@ -71,6 +84,7 @@ namespace ZombieHouse.Level
             PlacePlayer();
             SizeNavMeshVolume();
             PlacePickups();
+            PlaceBoss();
             PlaceSurvivors();
             PlacePowerCellAndMotor();
             PlacePowerUps();
@@ -98,6 +112,43 @@ namespace ZombieHouse.Level
             if (navMeshBaker == null) return;
             Bounds bounds = house.LevelBounds;
             navMeshBaker.SetBakeVolume(bounds.center, bounds.size);
+        }
+
+        /// <summary>
+        /// Puts the level's boss near the exit, asleep.
+        ///
+        /// Near rather than *in* the doorway on purpose: a boss blocking the exit collider
+        /// would be a wall, and the fight wants a room. It stays dormant until the level's
+        /// other conditions are met, so walking past it on the way to the power cell does
+        /// nothing at all — which is the whole effect. You will have seen it.
+        /// </summary>
+        private void PlaceBoss()
+        {
+            if (bossPrefab == null || house == null || !house.HasExit) return;
+
+            Vector3 exit = house.ExitPosition;
+            Vector3 towardsLevel = (house.PlayerSpawn - exit);
+            towardsLevel.y = 0f;
+
+            Vector3 wanted = exit + (towardsLevel.sqrMagnitude > 0.01f
+                ? towardsLevel.normalized * bossStandoff
+                : Vector3.forward * bossStandoff);
+
+            // It has to be somewhere it can path from, or it wakes and stands still.
+            UnityEngine.AI.NavMeshHit hit;
+            if (!UnityEngine.AI.NavMesh.SamplePosition(wanted, out hit, 12f,
+                                                       UnityEngine.AI.NavMesh.AllAreas))
+            {
+                Debug.LogWarning("[LevelDirector] No navigable ground near the exit for the boss.");
+                return;
+            }
+
+            ZombieProfile.NextKindOverride = bossKind;
+
+            var boss = Instantiate(bossPrefab, hit.position,
+                                   Quaternion.LookRotation(exit - hit.position, Vector3.up));
+            boss.name = "Boss_" + bossKind;
+            boss.AddComponent<LevelBoss>();
         }
 
         private void PlacePickups()

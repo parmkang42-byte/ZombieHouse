@@ -280,6 +280,7 @@ namespace ZombieHouse.EditorTools
             var forestAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             // Outside gets its own bed: no music box out here, just wind and a drone.
             var audioSo = new SerializedObject(forestAudio);
@@ -320,6 +321,9 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", zombiePrefab);
+            // The boss — the wood: still 1.7x from the rifle, so the level keeps its own lesson.
+            AssignReference(so, "bossPrefab", bearPrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossBear;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             forest.Generate();
@@ -452,6 +456,7 @@ namespace ZombieHouse.EditorTools
             var townAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             var audioSo = new SerializedObject(townAudio);
             audioSo.FindProperty("musicTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.MusicTown;
@@ -492,6 +497,10 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", cowboyPrefab);
+            // The boss — the town: a giant zombie horse, which is what the street is
+            // remembered for. Not one you asked for; the level needed something.
+            AssignReference(so, "bossPrefab", horsePrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossHorse;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             town.Generate();
@@ -812,6 +821,7 @@ namespace ZombieHouse.EditorTools
             var schoolAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             // The mansion's music box belongs in a building, and a school is a building.
             var audioSo = new SerializedObject(schoolAudio);
@@ -858,6 +868,9 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", teacherPrefab);
+            // The boss — the school: at this size the mop covers most of a classroom.
+            AssignReference(so, "bossPrefab", janitorPrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossJanitor;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             // A third of what is left is children, and they arrive three or four at a
@@ -1106,6 +1119,7 @@ namespace ZombieHouse.EditorTools
             var tombAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             // Its own bed: a beating drone, a Phrygian-dominant motif on something
             // metal, and a breath in the dark every dozen seconds.
@@ -1149,6 +1163,9 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", mummyPrefab);
+            // The boss — the tomb: keeps the shell, so the answer is what it always was.
+            AssignReference(so, "bossPrefab", scarabPrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossScarab;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             pyramid.Generate();
@@ -1436,6 +1453,7 @@ namespace ZombieHouse.EditorTools
             var jungleAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             // Its own bed: cicadas that cut out, a hollow log, and calls that stop
             // mid-note.
@@ -1486,6 +1504,9 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", zombiePrefab);
+            // The boss — the valley: the fastest of them, and the one you cannot walk away from.
+            AssignReference(so, "bossPrefab", jaguarPrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossJaguar;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             jungle.Generate();
@@ -2269,6 +2290,742 @@ namespace ZombieHouse.EditorTools
         /// exactly the bug that shipped for months when the town and the school were left
         /// on the default track, and it is invisible unless you play two levels in a row.
         /// </summary>
+        /// <summary>
+        /// The safe start: nothing can reach you, and nothing may attack, when a level opens.
+        ///
+        /// This is a promise to the player rather than a look, so it is worth testing as
+        /// one. Every level drops you in cold — no torch found, no idea which way the exit
+        /// is — and the first thing that happens should not be damage you had no way to
+        /// avoid. Two mechanisms enforce it and both are checked here, because either alone
+        /// leaves a hole:
+        ///
+        /// **A clear radius.** `PopulateHouse` leaves markers inside it empty. This is the
+        /// structural half, and it was missing entirely — the trickle spawner respected a
+        /// minimum distance but `PopulateHouse`, which is what every level actually uses,
+        /// placed one at every marker regardless of how close it was.
+        ///
+        /// **An opening grace.** Nothing attacks or wakes on proximity for the first few
+        /// seconds. This covers what the radius cannot: something already walking towards
+        /// the start, or a marker just outside the line.
+        ///
+        /// The per-level half also reports how much population each level loses to the
+        /// radius, because a level whose markers cluster near its entrance would quietly
+        /// lose half its zombies and only a count makes that visible.
+        /// </summary>
+        /// <summary>
+        /// The bosses: six archetypes, six levels wired to them, and an exit that waits.
+        ///
+        /// The boss is now a *fourth* exit condition, which makes it the single most
+        /// dangerous thing added to this project: get it wrong and the door never opens, the
+        /// level is unfinishable, and nothing about it looks broken — the player just walks
+        /// back and forth having done everything they were asked. So this checks the shape
+        /// of the gate rather than trusting it.
+        ///
+        /// It also checks the numbers, because a boss is only a boss if it is one. A giant
+        /// that dies to two magazines is a large zombie, and the difference between the two
+        /// lives entirely in health and stagger resistance.
+        /// </summary>
+        [MenuItem("Zombie House/Test Boss", false, 41)]
+        public static void TestBoss()
+        {
+            int problems = 0;
+
+            var bosses = new[]
+            {
+                ZombieKind.BossZombie, ZombieKind.BossBear, ZombieKind.BossHorse,
+                ZombieKind.BossJanitor, ZombieKind.BossScarab, ZombieKind.BossJaguar,
+            };
+
+            foreach (ZombieKind kind in bosses)
+            {
+                ZombieArchetype boss = null;
+                foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+                    if (a.Kind == kind) boss = a;
+
+                if (boss == null)
+                {
+                    Debug.LogError($"[Boss] No archetype for {kind}.");
+                    problems++;
+                    continue;
+                }
+
+                // Never drawn at random. A boss that turned up in the ordinary population
+                // would be an enormous surprise in the worst sense.
+                if (boss.Weight != 0f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} has weight {boss.Weight} and can be rolled " +
+                                   "into the normal population.");
+                    problems++;
+                }
+
+                if (boss.Health < 900f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} has {boss.Health:0} health — that is a big " +
+                                   "zombie, not a boss.");
+                    problems++;
+                }
+
+                // The ceiling matters as much as the floor, and this is the assertion that
+                // was missing. At 2200-3000 the fight was a minute and a half of holding the
+                // trigger on something that could not be staggered, interrupted or escaped.
+                // Long is not the same as hard; it is just long.
+                if (boss.Health > 1800f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} has {boss.Health:0} health — roughly " +
+                                   $"{boss.Health / 34f:0} gatling hits landed with it standing on " +
+                                   "you. That is an endurance test, not a fight.");
+                    problems++;
+                }
+
+                // Stunlocking is the way every boss fight dies. If it can be held in a
+                // stagger loop by a fast weapon the whole encounter evaporates.
+                if (boss.StaggerResistance < 0.70f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} staggers at {boss.StaggerResistance:P0} " +
+                                   "resistance — the gatling gun would hold it still until it died.");
+                    problems++;
+                }
+
+                // But total immunity is its own problem. Above ~0.90 nothing the player does
+                // produces any visible reaction at all, so there is no feedback that the
+                // fight is being won — just a health bar they cannot see.
+                if (boss.StaggerResistance > 0.88f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} is {boss.StaggerResistance:P0} stagger " +
+                                   "resistant — nothing the player does visibly affects it, so the " +
+                                   "fight reads as futile even while they are winning it.");
+                    problems++;
+                }
+
+                if (boss.Scale < 1.8f)
+                {
+                    Debug.LogError($"[Boss] {boss.Name} is only {boss.Scale:0.0}x scale.");
+                    problems++;
+                }
+
+                problems += CheckBossIsEscapable(boss);
+                problems += CheckBossLeavesAMistakeBudget(boss);
+
+                Debug.Log($"[Boss] {boss.Name}: {boss.Health:0} health, {boss.Scale:0.0}x, " +
+                          $"{boss.AttackDamage:0} a hit at {boss.AttackRange:0.0} m, " +
+                          $"{boss.StaggerResistance:P0} stagger resistance.");
+            }
+
+            problems += CheckBossGate();
+            problems += CheckEveryLevelHasABoss();
+
+            Debug.Log(problems == 0
+                ? "[Boss] PASS — six giants, each guarding its own level's exit."
+                : $"[Boss] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// You have to be able to walk away.
+        ///
+        /// Leaving is the player's only real tool for controlling a fight — break contact,
+        /// get a corner between you, reload, come back at it. A boss whose chase speed sits
+        /// above the player's sprint removes all of that at once and turns the encounter
+        /// into a dice roll on however much health they happened to arrive with. Two of the
+        /// six shipped that way: the Marshal's Horse at 8.0 m/s and the Green Mother at 7.4,
+        /// against a 6.8 m/s sprint.
+        ///
+        /// The margin is deliberately small. Escaping should be a decision with a cost, not
+        /// a stroll — it wants to be *just* possible.
+        /// </summary>
+        private static int CheckBossIsEscapable(ZombieArchetype boss)
+        {
+            const float PlayerSprint = 6.8f;   // PlayerController.sprintSpeed
+
+            if (boss.ChaseSpeed < PlayerSprint) return 0;
+
+            Debug.LogError($"[Boss] {boss.Name} chases at {boss.ChaseSpeed:0.0} m/s against a " +
+                           $"{PlayerSprint:0.0} m/s sprint — the player cannot disengage, so there " +
+                           "is no way to reposition, reload or retreat once it has seen them.");
+            return 1;
+        }
+
+        /// <summary>
+        /// How many hits you can take, given that you heal none of them.
+        ///
+        /// This is the check that would have caught the worst of it. On paper 55 damage
+        /// against 100 health is a two-hit kill, which sounds punishing but survivable —
+        /// until you notice PlayerHealth waits six seconds after the last hit before it
+        /// regenerates anything. A boss attacking every two seconds means that timer never
+        /// once elapses, so across the whole fight the player heals exactly zero.
+        ///
+        /// The real mistake budget was therefore one hit, and nothing in the game says so.
+        /// Three or more is the target: enough that a mistake is a scare rather than a
+        /// reload, and few enough that the fight stays frightening.
+        /// </summary>
+        private static int CheckBossLeavesAMistakeBudget(ZombieArchetype boss)
+        {
+            const float PlayerHealth = 100f;   // PlayerHealth.maxHealth
+            const float RegenDelay = 6f;       // PlayerHealth.regenDelay
+
+            int hitsToKill = Mathf.CeilToInt(PlayerHealth / Mathf.Max(1f, boss.AttackDamage));
+
+            // Only meaningful while the boss attacks faster than the regen timer — which
+            // every one of them does, but state it rather than assume it, because a genuinely
+            // slow boss can be allowed to hit very much harder.
+            bool healsBetweenHits = boss.AttackCooldown > RegenDelay;
+
+            if (hitsToKill >= 3 || healsBetweenHits) return 0;
+
+            Debug.LogError($"[Boss] {boss.Name} kills in {hitsToKill} hits ({boss.AttackDamage:0} " +
+                           $"damage into {PlayerHealth:0} health) and attacks every " +
+                           $"{boss.AttackCooldown:0.0}s — inside the {RegenDelay:0}s regen delay, so " +
+                           "the player heals nothing for the whole fight. The mistake budget is " +
+                           $"{hitsToKill - 1}.");
+            return 1;
+        }
+
+        /// <summary>
+        /// The gate itself: no boss means the exit behaves exactly as it always did, and a
+        /// live boss holds it shut. Checked on the real component rather than by reading
+        /// the source, because this is the condition that can strand a player.
+        /// </summary>
+        private static int CheckBossGate()
+        {
+            // With nothing in the scene there must be no boss and therefore no gate — this
+            // is what keeps every existing test rig and every bossless level working.
+            if (ZombieHouse.Enemies.LevelBoss.Current != null)
+            {
+                Debug.LogError("[Boss] A boss is registered with no level loaded; the static " +
+                               "state has leaked between scenes.");
+                return 1;
+            }
+
+            Debug.Log("[Boss] With no boss in the scene the exit gate is inert, so levels " +
+                      "without one are unaffected.");
+            return 0;
+        }
+
+        /// <summary>Every level's director actually got a boss prefab and a kind.</summary>
+        private static int CheckEveryLevelHasABoss()
+        {
+            var levels = new (string Tag, string Scene, ZombieKind Kind)[]
+            {
+                ("Verify", ScenePath, ZombieKind.BossZombie),
+                ("Forest", ForestScenePath, ZombieKind.BossBear),
+                ("Town", TownScenePath, ZombieKind.BossHorse),
+                ("School", SchoolScenePath, ZombieKind.BossJanitor),
+                ("Pyramid", PyramidScenePath, ZombieKind.BossScarab),
+                ("Jungle", JungleScenePath, ZombieKind.BossJaguar),
+            };
+
+            int problems = 0;
+
+            foreach (var level in levels)
+            {
+                if (!File.Exists(level.Scene))
+                {
+                    Debug.LogWarning($"[Boss] {level.Tag} has not been built; skipping.");
+                    continue;
+                }
+
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                var director = Object.FindAnyObjectByType<LevelDirector>();
+                if (director == null)
+                {
+                    Debug.LogError($"[Boss] {level.Tag} has no LevelDirector.");
+                    problems++;
+                    continue;
+                }
+
+                var so = new SerializedObject(director);
+                var prefab = so.FindProperty("bossPrefab");
+                var kind = so.FindProperty("bossKind");
+
+                if (prefab == null || prefab.objectReferenceValue == null)
+                {
+                    Debug.LogError($"[Boss] {level.Tag} has no boss prefab — its exit would open " +
+                                   "on the usual three conditions with nothing guarding it.");
+                    problems++;
+                    continue;
+                }
+
+                var assigned = (ZombieKind)kind.enumValueIndex;
+                if (assigned != level.Kind)
+                {
+                    Debug.LogError($"[Boss] {level.Tag} is set to {assigned}, expected {level.Kind}.");
+                    problems++;
+                    continue;
+                }
+
+                Debug.Log($"[Boss] {level.Tag}: {assigned} on {prefab.objectReferenceValue.name}.");
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// The two new scares: bodies that get up, and lights that fail as you approach.
+        ///
+        /// Both are the kind of feature that looks fine in the editor and is wrong in play,
+        /// because both are about *timing* relative to things the player has been promised.
+        /// The checks that matter here are therefore not "does it work" but "does it refuse
+        /// to work when it should":
+        ///
+        ///   * Nothing rises during the opening grace. A corpse sitting up at your feet in
+        ///     the first six seconds breaks the safe-start promise more comprehensively than
+        ///     an ordinary zombie would, because you cannot even run from it.
+        ///   * No zombie gets both scares. They are mutually exclusive and the combination
+        ///     silently cancels: a body lying flat behind a closed door is hidden BY the
+        ///     door, so the door opens on nothing and the corpse is never seen.
+        ///   * A failed light stays failed, and the sun is never a candidate.
+        /// </summary>
+        [MenuItem("Zombie House/Test Dread", false, 42)]
+        public static void TestDread()
+        {
+            int problems = 0;
+
+            problems += CheckPlayDead();
+            problems += CheckLightFailure();
+            problems += CheckDreadSounds();
+            problems += CheckScaresAreExclusive();
+
+            Debug.Log(problems == 0
+                ? "[Dread] PASS — bodies get up, lights go out, and neither happens too early."
+                : $"[Dread] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>A body lies down, stays down when it should, and gets up when it should.</summary>
+        private static int CheckPlayDead()
+        {
+            int problems = 0;
+
+            GameObject zombie = ZombieHouse.Enemies.ZombieFactory.Create("PlayDeadProbe");
+
+            try
+            {
+                Transform rig = zombie.transform.Find("Rig");
+                if (rig == null)
+                {
+                    Debug.LogError("[Dread] The zombie has no Rig; PlayDead has nothing to lay down.");
+                    return 1;
+                }
+
+                Vector3 standing = rig.localPosition;
+                Quaternion upright = rig.localRotation;
+
+                var playDead = zombie.AddComponent<ZombieHouse.Enemies.PlayDead>();
+                playDead.Lie();
+
+                // Deliberately NOT asserting that the rig moved downwards, which is what
+                // this checked first and was wrong about. The Rig pivots at the feet, so a
+                // correctly laid-out body barely moves its origin at all — it rotates. The
+                // honest question is where the collision ended up, and that is measured
+                // below against the floor rather than against the pivot.
+                float pitch = Quaternion.Angle(upright, rig.localRotation);
+                if (pitch < 60f)
+                {
+                    Debug.LogError($"[Dread] Prone rig is only {pitch:0}° off upright; it should " +
+                                   "be lying down.");
+                    problems++;
+                }
+
+                // The hit colliders must have come down with it, and must not have gone
+                // through the floor. This catches both of the ways this can be wrong, which
+                // need opposite fixes: a body still standing inside its own corpse, or one
+                // buried under the floorboards where nothing can hit it either.
+                //
+                // Physics.SyncTransforms is load-bearing. collider.bounds is served from the
+                // physics scene rather than from the transform hierarchy, and in edit mode
+                // nothing steps physics — so without the sync every bounds read here reports
+                // the standing pose no matter what Lie() did, and the check is measuring its
+                // own stale cache.
+                Physics.SyncTransforms();
+
+                float floor = zombie.transform.position.y;
+                float highest = float.MinValue;
+                float lowest = float.MaxValue;
+                int total = 0;
+
+                foreach (Collider collider in zombie.GetComponentsInChildren<Collider>())
+                {
+                    total++;
+                    Bounds bounds = collider.bounds;
+                    highest = Mathf.Max(highest, bounds.max.y - floor);
+                    lowest = Mathf.Min(lowest, bounds.min.y - floor);
+                }
+
+                if (total == 0)
+                {
+                    Debug.LogError("[Dread] The zombie has no colliders at all.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[Dread] Prone body occupies {lowest:0.00} m to {highest:0.00} m " +
+                              $"above its feet, across {total} colliders.");
+
+                    // A body lying down is roughly as tall as a body is thick.
+                    if (highest > 1.1f)
+                    {
+                        Debug.LogError($"[Dread] The prone body still reaches {highest:0.00} m — " +
+                                       "it is lying down on screen and standing up in physics.");
+                        problems++;
+                    }
+
+                    if (lowest < -0.20f)
+                    {
+                        Debug.LogError($"[Dread] The prone body reaches {lowest:0.00} m, well under " +
+                                       "its own feet — it has sunk through the floor and cannot " +
+                                       "be shot where it appears to lie.");
+                        problems++;
+                    }
+                }
+
+                if (playDead.HasRisen)
+                {
+                    Debug.LogError("[Dread] The body counts as risen before anything happened.");
+                    problems++;
+                }
+
+                // Shooting a body that was only pretending has to work, or a player who has
+                // learned the trick has no counter to it.
+                playDead.Rise();
+
+                if (!playDead.HasRisen)
+                {
+                    Debug.LogError("[Dread] Rise() did not take.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log("[Dread] A body lies face down, and gets up when disturbed.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(zombie);
+            }
+
+            return problems;
+        }
+
+        /// <summary>A light flickers, then dies, and does not come back.</summary>
+        private static int CheckLightFailure()
+        {
+            int problems = 0;
+
+            var lamp = new GameObject("FailingLamp");
+
+            try
+            {
+                var light = lamp.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.intensity = 1.4f;
+
+                var failure = lamp.AddComponent<ZombieHouse.Fx.LightFailure>();
+                failure.Initialise();
+
+                if (failure.HasFailed)
+                {
+                    Debug.LogError("[Dread] The lamp starts failed.");
+                    problems++;
+                }
+
+                failure.Trigger();
+
+                // Driven by hand a frame at a time, because Time.time does not advance in a
+                // batch run — an Update-driven flicker would sit on frame zero forever and
+                // the test would pass by never reaching the end.
+                bool flickered = false;
+                for (int i = 0; i < 200 && !failure.HasFailed; i++)
+                {
+                    failure.Tick(0.016f);
+                    if (light.intensity < 1.4f * 0.5f) flickered = true;
+                }
+
+                if (!flickered)
+                {
+                    Debug.LogError("[Dread] The lamp never dimmed on its way out — a bulb that " +
+                                   "goes from full to black in one frame reads as a draw error.");
+                    problems++;
+                }
+
+                if (!failure.HasFailed)
+                {
+                    Debug.LogError("[Dread] The lamp never finished failing after 3.2 seconds.");
+                    problems++;
+                }
+                else if (light.enabled || light.intensity > 0.001f)
+                {
+                    Debug.LogError($"[Dread] A failed lamp is still lit (enabled={light.enabled}, " +
+                                   $"intensity={light.intensity:0.000}).");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log("[Dread] A lamp stutters for under a second, then goes for good.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(lamp);
+            }
+
+            return problems;
+        }
+
+        /// <summary>The two new clips exist, carry signal, and are not each other.</summary>
+        private static int CheckDreadSounds()
+        {
+            int problems = 0;
+
+            var bank = ZombieHouse.Audio.SoundBank.Build();
+
+            foreach (ZombieHouse.Audio.Sfx sfx in new[]
+                     { ZombieHouse.Audio.Sfx.ZombieRise, ZombieHouse.Audio.Sfx.LightPop })
+            {
+                if (!bank.TryGetValue(sfx, out AudioClip[] clips) || clips == null || clips.Length == 0)
+                {
+                    Debug.LogError($"[Dread] {sfx} has no clip. An Sfx member with no recipe is " +
+                                   "silent at the moment it matters and throws nothing.");
+                    problems++;
+                    continue;
+                }
+
+                foreach (AudioClip clip in clips)
+                {
+                    var samples = new float[clip.samples * clip.channels];
+                    clip.GetData(samples, 0);
+
+                    double sum = 0.0;
+                    foreach (float sample in samples) sum += sample * sample;
+                    float rms = Mathf.Sqrt((float)(sum / Mathf.Max(1, samples.Length)));
+
+                    if (rms < 0.01f)
+                    {
+                        Debug.LogError($"[Dread] {clip.name} is effectively silent (RMS {rms:0.0000}).");
+                        problems++;
+                    }
+                    else
+                    {
+                        Debug.Log($"[Dread] {clip.name}: {clip.length:0.00}s, RMS {rms:0.000}.");
+                    }
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// No zombie may carry both DoorAmbush and PlayDead.
+        ///
+        /// Driven on real components rather than by scanning a level, and that is the second
+        /// version of this check. The first walked the built house counting zombies with
+        /// both — and found none, because a saved scene contains no zombies at all: the
+        /// spawner populates at runtime. It reported "0 ambushes, 0 playing dead, none both"
+        /// and passed, and would have passed just as cheerfully with the exclusion deleted.
+        ///
+        /// The rule now lives in PlayDead.Lie(), which declines a zombie that already has a
+        /// door to hide behind, so the real thing can be exercised in three lines instead of
+        /// being approximated by a scan that had nothing to look at.
+        /// </summary>
+        private static int CheckScaresAreExclusive()
+        {
+            int problems = 0;
+
+            GameObject zombie = ZombieHouse.Enemies.ZombieFactory.Create("ExclusivityProbe");
+
+            try
+            {
+                // A zombie already committed to a door.
+                zombie.AddComponent<ZombieHouse.Enemies.DoorAmbush>().Crouch();
+
+                var playDead = zombie.AddComponent<ZombieHouse.Enemies.PlayDead>();
+
+                if (playDead.Lie())
+                {
+                    Debug.LogError("[Dread] A door ambusher was also laid out as a corpse. The " +
+                                   "door hides the body, so the door opens on nothing and the " +
+                                   "body is never seen getting up — two scares spent for none.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log("[Dread] A zombie already behind a door refuses to also play dead.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(zombie);
+            }
+
+            // And the plain case still has to work, or the refusal above would pass just as
+            // well by refusing everything.
+            GameObject loner = ZombieHouse.Enemies.ZombieFactory.Create("LonerProbe");
+
+            try
+            {
+                if (!loner.AddComponent<ZombieHouse.Enemies.PlayDead>().Lie())
+                {
+                    Debug.LogError("[Dread] A zombie with no door refused to play dead — the " +
+                                   "exclusion is rejecting everything, so no level has this scare.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log("[Dread] A zombie with no door lies down as asked.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(loner);
+            }
+
+            return problems;
+        }
+
+        [MenuItem("Zombie House/Test Safe Start", false, 40)]
+        public static void TestSafeStart()
+        {
+            int problems = 0;
+
+            // ---- the grace ------------------------------------------------
+            var rig = new GameObject("SafeStartRig");
+            try
+            {
+                var manager = rig.AddComponent<GameManager>();
+                var so = new SerializedObject(manager);
+
+                var grace = so.FindProperty("openingGraceSeconds");
+                if (grace == null)
+                {
+                    Debug.LogError("[SafeStart] GameManager has no openingGraceSeconds.");
+                    problems++;
+                }
+                else if (grace.floatValue < 3f)
+                {
+                    Debug.LogError($"[SafeStart] The opening grace is {grace.floatValue:0.0}s — " +
+                                   "too short to find your feet in.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[SafeStart] Opening grace: {grace.floatValue:0.0}s with nothing " +
+                              "able to attack or wake.");
+                }
+
+                // With no manager running, combat must be allowed — a stripped test rig has
+                // to behave exactly as it always did.
+                if (!GameManager.CombatAllowed)
+                {
+                    Debug.LogError("[SafeStart] Combat is disallowed with no live manager; " +
+                                   "every existing test rig would silently stop fighting.");
+                    problems++;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(rig);
+            }
+
+            // ---- the radius, per level -------------------------------------
+            problems += CheckSafeRadius();
+
+            Debug.Log(problems == 0
+                ? "[SafeStart] PASS — a clear radius at every start, and a grace over the top."
+                : $"[SafeStart] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// How many of each level's spawn markers fall inside the safe radius, and whether
+        /// that costs the level too much of its population.
+        /// </summary>
+        private static int CheckSafeRadius()
+        {
+            var spawner = new GameObject("RadiusProbe").AddComponent<ZombieSpawner>();
+            float radius;
+
+            try
+            {
+                var field = new SerializedObject(spawner).FindProperty("safeStartRadius");
+                if (field == null)
+                {
+                    Debug.LogError("[SafeStart] ZombieSpawner has no safeStartRadius.");
+                    return 1;
+                }
+
+                radius = field.floatValue;
+            }
+            finally
+            {
+                Object.DestroyImmediate(spawner.gameObject);
+            }
+
+            if (radius < 8f)
+            {
+                Debug.LogError($"[SafeStart] The safe radius is {radius:0} m — a zombie can " +
+                               "cross that before you have finished reading the objective.");
+                return 1;
+            }
+
+            int problems = 0;
+
+            var levels = new (string Tag, string Scene)[]
+            {
+                ("Verify", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
+                ("School", SchoolScenePath), ("Pyramid", PyramidScenePath), ("Jungle", JungleScenePath),
+            };
+
+            foreach (var level in levels)
+            {
+                if (!File.Exists(level.Scene))
+                {
+                    Debug.LogWarning($"[SafeStart] {level.Tag} has not been built; skipping.");
+                    continue;
+                }
+
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                ILevelSource source = null;
+                foreach (MonoBehaviour behaviour in Object.FindObjectsByType<MonoBehaviour>(
+                             FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    if (behaviour is ILevelSource candidate) { source = candidate; break; }
+                }
+
+                if (source == null)
+                {
+                    Debug.LogError($"[SafeStart] {level.Tag} has no level source.");
+                    problems++;
+                    continue;
+                }
+
+                ProtoMaterials.ClearCache();
+                source.Generate();
+
+                int inside = 0;
+                foreach (Vector3 spawn in source.ZombieSpawns)
+                    if (Vector3.Distance(spawn, source.PlayerSpawn) < radius) inside++;
+
+                int total = source.ZombieSpawns.Count;
+                float share = total == 0 ? 0f : inside / (float)total;
+
+                // Losing a couple of markers is the intended cost. Losing most of them means
+                // the level's markers are clustered at its entrance and the safe start has
+                // gutted its population rather than trimmed it.
+                if (share > 0.5f)
+                {
+                    Debug.LogError($"[SafeStart] {level.Tag}: {inside} of {total} spawn markers are " +
+                                   $"inside the {radius:0} m safe radius — that is most of the level's " +
+                                   "population, so the markers need moving rather than skipping.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[SafeStart] {level.Tag}: {inside} of {total} markers fall inside " +
+                              $"{radius:0} m and are left empty.");
+                }
+            }
+
+            return problems;
+        }
+
         [MenuItem("Zombie House/Test Music", false, 39)]
         public static void TestMusic()
         {
@@ -6622,6 +7379,7 @@ namespace ZombieHouse.EditorTools
             var houseAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
             // Stated rather than inherited. Leaving this to the field default is exactly
             // how the town spent months playing the forest's wind down a dusty street.
@@ -6664,6 +7422,9 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", zombiePrefab);
+            // The boss — the house: the first thing the game taught you to kill, returned enormous.
+            AssignReference(so, "bossPrefab", zombiePrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossZombie;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             // Show the layout in the editor immediately rather than only on Play.

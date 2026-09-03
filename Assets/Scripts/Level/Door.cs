@@ -75,13 +75,21 @@ namespace ZombieHouse.Level
         private readonly List<DoorAmbush> _waiting = new List<DoorAmbush>();
 
         /// <summary>
-        /// Called by the generator once the leaf exists. Not Awake, because a generator
+        /// Called by the generator once the hinge exists. Not Awake, because a generator
         /// builds these in edit mode where Awake never runs.
+        ///
+        /// **The transform passed in must be the hinge, not the leaf.** A door swings about
+        /// an axis down one edge, and the only way to get that from a transform is to
+        /// rotate a *parent* sitting on that edge with the leaf offset beneath it. Rotating
+        /// the leaf itself turns it about its own centre — which is a turnstile blade
+        /// spinning in the doorway, not a door. That is precisely what this did at first,
+        /// and it is an easy mistake to make because the code reads perfectly sensibly:
+        /// the leaf is the thing you can see, so the leaf is the thing you reach for.
         /// </summary>
-        public void Initialise(Transform leaf, float hingeSign)
+        public void Initialise(Transform hinge, float hingeSign)
         {
-            _leaf = leaf;
-            _closed = leaf.localRotation;
+            _leaf = hinge;
+            _closed = hinge.localRotation;
             _open = _closed * Quaternion.Euler(0f, openAngle * hingeSign, 0f);
         }
 
@@ -108,9 +116,12 @@ namespace ZombieHouse.Level
 
             if (_leaf == null)
             {
-                // Rebuilt from a saved scene rather than freshly generated: the hinge
-                // rotations were never captured, so recover them from what is on disk.
-                _leaf = transform.childCount > 0 ? transform.GetChild(0) : transform;
+                // Rebuilt from a saved scene rather than freshly generated: the rotations
+                // were never captured, so recover them from the hinge on disk.
+                Transform hinge = transform.Find("Hinge");
+                _leaf = hinge != null ? hinge
+                      : transform.childCount > 0 ? transform.GetChild(0) : transform;
+
                 _closed = _leaf.localRotation;
                 _open = _closed * Quaternion.Euler(0f, openAngle, 0f);
             }

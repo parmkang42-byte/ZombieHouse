@@ -24,7 +24,11 @@ namespace ZombieHouse.Audio
 
         // One tension layer per bed, mixed over it and faded in by ThreatMeter. Each is
         // exactly as long as the bed it sits on, or they drift apart within a minute.
-        TensionHouse, TensionForest, TensionTown, TensionSchool, TensionTomb, TensionJungle
+        TensionHouse, TensionForest, TensionTown, TensionSchool, TensionTomb, TensionJungle,
+
+        // Appended, never inserted. Everything above keeps the index it already had, which
+        // is what stops a rebuild-less scene from changing its music track.
+        ZombieRise, LightPop
     }
 
     /// <summary>
@@ -43,6 +47,9 @@ namespace ZombieHouse.Audio
 
             return new Dictionary<Sfx, AudioClip[]>
             {
+                { Sfx.ZombieRise,     Many(2, i => ZombieRise(rng, i)) },
+                { Sfx.LightPop,       new[] { LightPop(rng) } },
+
                 { Sfx.Gunshot,        new[] { Gunshot(rng) } },
                 { Sfx.GunshotHeavy,   new[] { GunshotHeavy(rng) } },
                 { Sfx.GunshotSmg,     Many(3, i => GunshotSmg(rng, i)) },
@@ -276,6 +283,79 @@ namespace ZombieHouse.Audio
             MakeSeamless(mix, 0.08f);
             Normalize(mix, 0.5f);
             return ToClip("GatlingSpin", mix, true);
+        }
+
+        /// <summary>
+        /// A body pushing itself up off the floor: cloth dragging, a wet joint, a breath in.
+        ///
+        /// Built in that order deliberately, because the order is the story. The drag comes
+        /// first and is the quietest part — it is the sound the player half-hears and turns
+        /// towards. The breath lands last and is the one that gets them, and it is a breath
+        /// *in*, because inhalation is what something does before it makes a noise at you.
+        /// </summary>
+        private static AudioClip ZombieRise(System.Random rng, int variant)
+        {
+            var data = Buffer(1.15f);
+
+            // Cloth and grit dragging over floorboards. Filtered noise with a slow swell.
+            AddNoise(data, 0.55f, rng);
+            SweepLowPass(data, 900f, 320f);
+            ApplyEnvelope(data, 0.30f, 0.55f);
+
+            // The joint. A short creak that warbles, so it reads as something under load
+            // rather than as a synthesiser doing a downward sweep.
+            var creak = Buffer(0.55f);
+            AddSaw(creak, 148f + variant * 21f, 96f, 0.38f);
+            ApplyWarble(creak, 45f, 7.5f);
+            LowPass(creak, 1500f);
+            ApplyEnvelope(creak, 0.06f, 0.34f);
+            Mix(data, creak, 0.7f);
+
+            // The breath. Formants are what stop this being wind — three resonant peaks and
+            // noise stops sounding like air and starts sounding like a throat.
+            var breath = Buffer(0.62f);
+            AddNoise(breath, 0.7f, rng);
+            AddFormants(breath, 520f, 1180f, 2400f);
+            ApplyReverseEnvelope(breath, 0.44f, 0.07f);
+            Mix(data, breath, 0.85f);
+
+            Normalize(data, 0.82f);
+            return ToClip("ZombieRise" + variant, data);
+        }
+
+        /// <summary>
+        /// A filament letting go: a glass tick, a mains-frequency buzz, and a small collapse.
+        ///
+        /// The buzz is the detail that sells it. A bulb failing is not a pure pop — for a
+        /// fraction of a second the arc is still carrying current, and the ear knows the
+        /// sound of mains hum well enough to notice when it is missing, even if nobody could
+        /// name what they were listening for.
+        /// </summary>
+        private static AudioClip LightPop(System.Random rng)
+        {
+            var data = Buffer(0.42f);
+
+            // The tick: glass and tungsten, bright and gone.
+            AddNoise(data, 1f, rng);
+            HighPass(data, 3200f);
+            ApplyPercussiveEnvelope(data, 0.0004f, 120f);
+
+            // The arc, at mains frequency and its octave. Loud briefly, then nothing.
+            var arc = Buffer(0.42f);
+            AddSine(arc, 50f, 50f, 0.5f);
+            AddSine(arc, 100f, 97f, 0.32f);
+            ApplyCrackle(arc, rng, burstsPerSecond: 55f, burstSeconds: 0.008f);
+            ApplyPercussiveEnvelope(arc, 0.001f, 26f);
+            Mix(data, arc, 0.75f);
+
+            // The last of the light dying away, an octave down and falling.
+            var fade = Buffer(0.42f);
+            AddSine(fade, 1400f, 240f, 0.22f);
+            ApplyPercussiveEnvelope(fade, 0.002f, 16f);
+            Mix(data, fade, 0.5f);
+
+            Normalize(data, 0.72f);
+            return ToClip("LightPop", data);
         }
 
         private static AudioClip DryFire(System.Random rng)

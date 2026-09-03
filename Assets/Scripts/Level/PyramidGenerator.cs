@@ -322,8 +322,22 @@ namespace ZombieHouse.Level
             lid.transform.rotation = box.transform.rotation;
 
             // The mask on the lid — one gold face in a dark room does a lot of work.
-            CreateDecoration($"SarcMask_{r}_{c}", at + new Vector3(0f, 1.28f, 0.7f),
+            var mask = CreateDecoration($"SarcMask_{r}_{c}", at + new Vector3(0f, 1.28f, 0.7f),
                 new Vector3(0.5f, 0.14f, 0.66f), ProtoMaterials.Gold);
+
+            // The mesh carries chest, lid and mask together, so all three boxes go dark and
+            // one object replaces them. Overlay rather than Dress because it stands taller
+            // than the chest box — the lid is proud of it, which is most of the silhouette.
+            //
+            // Local units: Overlay works in the anchor's own space and the anchor is a cube
+            // scaled to (1.1, 1.1, 2.4), so every world measurement below is divided by the
+            // axis it sits on. Forgetting that division is how a prop arrives at the right
+            // place in the wrong size.
+            PropLibrary.Overlay(box, "Sarcophagus",
+                localCentre: new Vector3(0f, 0.10f / 1.1f, 0f),
+                size: new Vector3(1.20f / 1.1f, 1.30f / 1.1f, 2.50f / 2.4f),
+                material: ProtoMaterials.Granite,
+                hide: new[] { box, lid, mask });
 
             AddHidingSpot(at + new Vector3(cellSize * 0.6f, 0f, 0f), Vector3.right);
         }

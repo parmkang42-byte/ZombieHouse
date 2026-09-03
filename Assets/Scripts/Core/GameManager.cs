@@ -23,7 +23,32 @@ namespace ZombieHouse.Core
              + "that the last stragglers have to be hunted down one at a time.")]
         [Range(0f, 1f)] [SerializeField] private float requiredKillFraction = 2f / 3f;
 
+        [Tooltip("Seconds at the start of a level during which nothing can attack you and "
+                 + "nothing wakes on proximity. Every level drops you in cold — you have "
+                 + "not found the torch, you do not know which way the exit is, and the "
+                 + "first thing that happens should not be damage you had no way to avoid.")]
+        [SerializeField] private float openingGraceSeconds = 6f;
+
+
         public GameState State { get; private set; } = GameState.Playing;
+
+        /// <summary>
+        /// False for the opening seconds of a level, while nothing is allowed to attack.
+        ///
+        /// Read by <see cref="ZombieHouse.Enemies.ZombieAI"/> in two places: the transition
+        /// into an attack, and the proximity wake. Gating both matters — stopping the
+        /// attack alone would leave a zombie standing over you with its arms up, which
+        /// looks like a bug rather than like mercy.
+        ///
+        /// Defaults to true when there is no manager at all, so a test scene or a
+        /// stripped-down rig behaves exactly as it always did.
+        /// </summary>
+        public static bool CombatAllowed => Instance == null || Instance.GraceRemaining <= 0f;
+
+        /// <summary>Seconds of grace left, for the HUD and for tests.</summary>
+        public float GraceRemaining { get; private set; }
+
+
         public int ZombiesAlive => _alive.Count;
         public int ZombiesKilled { get; private set; }
         public int ZombiesRemainingToSpawn { get; private set; }
@@ -84,6 +109,9 @@ namespace ZombieHouse.Core
 
         private void Start()
         {
+            GraceRemaining = Mathf.Max(0f, openingGraceSeconds);
+
+
             SetState(GameState.Playing);
         }
 
@@ -94,6 +122,10 @@ namespace ZombieHouse.Core
 
         private void Update()
         {
+            if (GraceRemaining > 0f && State == GameState.Playing)
+                GraceRemaining = Mathf.Max(0f, GraceRemaining - Time.deltaTime);
+
+
             if (Player.InputReader.PausePressed)
             {
                 if (State == GameState.Playing) SetState(GameState.Paused);
@@ -164,6 +196,17 @@ namespace ZombieHouse.Core
             EvaluateClear();
         }
 
+        /// <summary>
+        /// Asks the exit conditions to be looked at again. Called by the boss on death,
+        /// because killing it is usually the last thing that happens and nothing else
+        /// would trigger a re-evaluation afterwards — the door would stay shut in front of
+        /// a player who had done everything.
+        /// </summary>
+        public void ReEvaluateExit()
+        {
+            EvaluateClear();
+        }
+
         private void EvaluateClear()
         {
             // Two conditions, and they ask for different things. The kill quota is a
@@ -178,8 +221,14 @@ namespace ZombieHouse.Core
             // level, search it, and then carry something heavy back across it.
             bool motorReady = !RequiresMotor || MotorPowered;
 
+            // A fourth condition, and the last one: whatever is guarding the way out has to
+            // be dead. The boss deliberately does not wake until the other three are met,
+            // so this is what turns "the level is finished" into "the level is finished
+            // except for the thing that has been standing in the dark by the exit".
+            bool bossDown = Enemies.LevelBoss.Current == null || Enemies.LevelBoss.Defeated;
+
             if (!ExitUnlocked && _spawningFinished && ZombiesNeededForExit <= 0
-                && AllSurvivorsRescued && motorReady)
+                && AllSurvivorsRescued && motorReady && bossDown)
             {
                 ExitUnlocked = true;
                 ExitUnlockedChanged?.Invoke();

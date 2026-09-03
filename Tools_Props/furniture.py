@@ -23,35 +23,7 @@ import bpy
 import bmesh
 from mathutils import Vector
 
-from _propkit import clear_scene, finish, join
-
-
-def block(name, centre, size, bevel=0.012, segments=1):
-    """A bevelled box. The unit of construction for everything in this file."""
-    mesh = bpy.data.meshes.new(name)
-    bm = bmesh.new()
-    bmesh.ops.create_cube(bm, size=1.0)
-
-    for vert in bm.verts:
-        vert.co.x *= size[0]
-        vert.co.y *= size[1]
-        vert.co.z *= size[2]
-
-    if bevel > 0.0:
-        bmesh.ops.bevel(bm,
-                        geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
-                        offset=bevel, segments=segments, affect="EDGES", profile=0.5)
-
-    for vert in bm.verts:
-        vert.co += Vector(centre)
-
-    bm.normal_update()
-    bm.to_mesh(mesh)
-    bm.free()
-
-    obj = bpy.data.objects.new(name, mesh)
-    bpy.context.collection.objects.link(obj)
-    return obj
+from _propkit import block, clear_scene, finish, join
 
 
 def cylinder(name, centre, radius, height, segments=10, axis="z"):
@@ -221,17 +193,29 @@ def build_stairs():
 
 
 def main():
+    # bevelled=False throughout this file, and it is not an oversight.
+    #
+    # `block` already bevels every box it makes, which is the whole reason it exists -- these
+    # props are built from right angles and a right angle is precisely what needs breaking.
+    # _propkit's global bevel pass exists for the *organic* props (boulders, trunks, columns),
+    # which are noise-displaced surfaces with no bevel anywhere.
+    #
+    # Running both is not just redundant, it is expensive: bevelling an already-bevelled edge
+    # replaces one edge with three, and the staircase -- twelve treads and twelve risers, every
+    # edge a right angle -- came out at 3,122 triangles against a 1,500 budget. If furniture
+    # needs a stronger edge, widen the `bevel=` on the block that needs it, where the cost is
+    # one box rather than the whole prop.
     clear_scene()
-    finish(build_desk(), "Desk", 700, lay_along="y")
+    finish(build_desk(), "Desk", 700, lay_along="y", bevelled=False)
 
     clear_scene()
-    finish(build_chandelier(), "Chandelier", 900, lay_along="y")
+    finish(build_chandelier(), "Chandelier", 900, lay_along="y", bevelled=False)
 
     clear_scene()
     # 700 rather than 900: the decimator counts polygons and the exporter triangulates
     # them, so the number Unity sees is roughly double. 900 came out at 1,700 triangles,
     # over the per-prop budget Test Props enforces.
-    finish(build_stairs(), "Stairs", 700, lay_along="y")
+    finish(build_stairs(), "Stairs", 700, lay_along="y", bevelled=False)
 
 
 if __name__ == "__main__":

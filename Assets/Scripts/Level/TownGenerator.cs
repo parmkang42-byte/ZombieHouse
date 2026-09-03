@@ -514,8 +514,13 @@ namespace ZombieHouse.Level
             _alleyMouths.Add(mouth);
 
             // A crate or two down the far end, so the alley is not a bare slot.
-            CreateBox($"AlleyCrate_{side}_{z:0}", new Vector3((streetEdge + depth * 0.6f) * side, 0.45f, z),
+            var alleyCrate = CreateBox($"AlleyCrate_{side}_{z:0}",
+                new Vector3((streetEdge + depth * 0.6f) * side, 0.45f, z),
                 new Vector3(0.9f, 0.9f, 0.9f), ProtoMaterials.Plank, true);
+
+            // Dress, not Overlay: the crate is exactly one box and the mesh is the same
+            // size, so swapping what it draws cannot change what it collides with.
+            PropLibrary.Dress(alleyCrate, "Crate");
 
             AddHidingSpot(mouth, Vector3.right * -side);
             AddHidingSpot(new Vector3((streetEdge + depth * 0.35f) * side, 0f, z), Vector3.right * -side);
@@ -564,6 +569,7 @@ namespace ZombieHouse.Level
                 var crate = CreateBox($"Crate_{i}", spot + Vector3.up * (size * 0.5f),
                     new Vector3(size, size, size), ProtoMaterials.Plank, true);
                 crate.transform.rotation = Quaternion.Euler(0f, Range(0f, 360f), 0f);
+                PropLibrary.Dress(crate, "Crate");
             }
 
             for (int i = 0; i < wagonCount; i++)

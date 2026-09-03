@@ -302,14 +302,33 @@ namespace ZombieHouse.Level
             pivot.transform.position = transform.position + centre + hingeOffset;
             if (!acrossColumns) pivot.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
 
-            // The leaf, hung so its inside edge is on the hinge.
+            // Pivot -> hinge -> leaf. The hinge sits on the pivot at the hanging edge and
+            // is the thing that turns; the leaf hangs off it, offset by half the opening.
+            // Rotating the leaf directly would spin it about its own centre.
+            var hinge = new GameObject("Hinge");
+            hinge.layer = doorLayer;
+            hinge.transform.SetParent(pivot.transform, false);
+
             var leaf = GameObject.CreatePrimitive(PrimitiveType.Cube);
             leaf.name = "Leaf";
             leaf.layer = doorLayer;
-            leaf.transform.SetParent(pivot.transform, false);
+            leaf.transform.SetParent(hinge.transform, false);
             leaf.transform.localPosition = new Vector3(half, doorHeight * 0.5f, 0f);
             leaf.transform.localScale = new Vector3(cellSize, doorHeight, 0.09f);
             leaf.GetComponent<MeshRenderer>().sharedMaterial = ProtoMaterials.Trim;
+
+            // A handle, on the swinging edge — which is also the clearest way to see at a
+            // glance which side a door is hung on.
+            var handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            handle.name = "Handle";
+            handle.layer = doorLayer;
+            handle.transform.SetParent(hinge.transform, false);
+            handle.transform.localPosition = new Vector3(cellSize * 0.86f, doorHeight * 0.47f, 0.075f);
+            handle.transform.localScale = new Vector3(0.14f, 0.05f, 0.06f);
+            handle.GetComponent<MeshRenderer>().sharedMaterial = ProtoMaterials.GunEdge;
+
+            var handleCollider = handle.GetComponent<Collider>();
+            if (Application.isPlaying) Destroy(handleCollider); else DestroyImmediate(handleCollider);
 
             var door = pivot.AddComponent<Door>();
 
@@ -322,7 +341,7 @@ namespace ZombieHouse.Level
 
             // Alternate which side each door swings, so a corridor of them does not look
             // like it was installed by a machine.
-            door.Initialise(leaf.transform, ((r + c) % 2 == 0) ? 1f : -1f);
+            door.Initialise(hinge.transform, ((r + c) % 2 == 0) ? 1f : -1f);
         }
 
         /// <summary>
@@ -370,53 +389,66 @@ namespace ZombieHouse.Level
             }
         }
 
-        /// <summary>One board, its tray, and a stub of chalk, facing into the room.</summary>
+        /// <summary>
+        /// One board, flat against the wall.
+        ///
+        /// Built as a painting rather than as furniture: everything sits within about three
+        /// centimetres of the wall face, and there is no tray, no chalk ledge and nothing
+        /// with depth for the player to catch on. A classroom wall wants a dark rectangle
+        /// with a border and some ghosting on it — the trays and stubs of chalk that were
+        /// here first read as clutter at eye height, stuck out into a corridor people brush
+        /// past, and bought nothing at the distance anyone actually sees them from.
+        ///
+        /// Collider-free, like every other wall decoration: the wall behind it already
+        /// stops you, and a second surface in the same place is a seam to get stuck on.
+        /// </summary>
         private void HangChalkboard(int r, int c, int intoRoomR, int intoRoomC)
         {
-            // A hair proud of the wall face, or it z-fights with the wall behind it.
-            Vector3 outward = new Vector3(intoRoomC, 0f, -intoRoomR) * (cellSize * 0.5f + 0.06f);
-            Vector3 at = CellToLocal(r, c) + outward + Vector3.up * 1.55f;
+            // Just proud of the wall face, or it z-fights with the wall behind it.
+            Vector3 facing = new Vector3(intoRoomC, 0f, -intoRoomR);
+            Vector3 outward = facing * (cellSize * 0.5f + 0.02f);
+            Vector3 at = CellToLocal(r, c) + outward + Vector3.up * 1.6f;
 
             bool alongX = intoRoomC == 0;
-            Vector3 boardSize = alongX ? new Vector3(cellSize * 1.55f, 1.15f, 0.07f)
-                                       : new Vector3(0.07f, 1.15f, cellSize * 1.55f);
+
+            // The board itself: wide, shallow, and thin enough to read as painted on.
+            Vector3 boardSize = alongX ? new Vector3(cellSize * 1.5f, 1.1f, 0.02f)
+                                       : new Vector3(0.02f, 1.1f, cellSize * 1.5f);
 
             CreateDecoration($"Chalkboard_{r}_{c}", at, boardSize, ProtoMaterials.Chalkboard);
 
-            // The frame, as four thin strips round the edge. A board with no frame reads as
-            // a dark rectangle painted on the wall.
-            Vector3 lip = alongX ? new Vector3(cellSize * 1.62f, 0.07f, 0.09f)
-                                 : new Vector3(0.09f, 0.07f, cellSize * 1.62f);
+            // A painted border, a shade lighter, sitting a millimetre in front. Four thin
+            // strips rather than a frame with depth.
+            Vector3 railH = alongX ? new Vector3(cellSize * 1.56f, 0.05f, 0.012f)
+                                   : new Vector3(0.012f, 0.05f, cellSize * 1.56f);
+            Vector3 railV = alongX ? new Vector3(0.05f, 1.16f, 0.012f)
+                                   : new Vector3(0.012f, 1.16f, 0.05f);
 
-            CreateDecoration($"ChalkFrameTop_{r}_{c}", at + Vector3.up * 0.60f, lip, ProtoMaterials.ChalkTray);
-            CreateDecoration($"ChalkFrameBottom_{r}_{c}", at - Vector3.up * 0.60f, lip, ProtoMaterials.ChalkTray);
+            Vector3 nudge = facing * 0.008f;
+            Vector3 across = alongX ? Vector3.right : Vector3.forward;
 
-            // The tray, and the chalk on it.
-            Vector3 traySize = alongX ? new Vector3(cellSize * 1.6f, 0.06f, 0.16f)
-                                      : new Vector3(0.16f, 0.06f, cellSize * 1.6f);
+            CreateDecoration($"ChalkEdgeTop_{r}_{c}", at + Vector3.up * 0.575f + nudge,
+                             railH, ProtoMaterials.ChalkTray);
+            CreateDecoration($"ChalkEdgeBottom_{r}_{c}", at - Vector3.up * 0.575f + nudge,
+                             railH, ProtoMaterials.ChalkTray);
+            CreateDecoration($"ChalkEdgeLeft_{r}_{c}", at - across * (cellSize * 0.755f) + nudge,
+                             railV, ProtoMaterials.ChalkTray);
+            CreateDecoration($"ChalkEdgeRight_{r}_{c}", at + across * (cellSize * 0.755f) + nudge,
+                             railV, ProtoMaterials.ChalkTray);
 
-            CreateDecoration($"ChalkTray_{r}_{c}", at - Vector3.up * 0.66f + outward.normalized * 0.05f,
-                             traySize, ProtoMaterials.ChalkTray);
-
-            Vector3 chalkSize = alongX ? new Vector3(0.11f, 0.035f, 0.035f)
-                                       : new Vector3(0.035f, 0.035f, 0.11f);
-
-            CreateDecoration($"Chalk_{r}_{c}", at - Vector3.up * 0.61f + outward.normalized * 0.06f,
-                             chalkSize, ProtoMaterials.ChalkDust);
-
-            // Something half-rubbed-out. Streaks of dust are what make a board look used,
-            // and a used board in an empty school is doing the level's job for it.
-            for (int i = 0; i < 3; i++)
+            // Ghosting: what a board looks like after a term of being half-wiped. This is
+            // the only part that says the room was used, so it does the most work.
+            for (int i = 0; i < 4; i++)
             {
-                float across = (i - 1) * cellSize * 0.42f;
-                Vector3 offset = alongX ? new Vector3(across, 0.12f * (i - 1), 0f)
-                                        : new Vector3(0f, 0.12f * (i - 1), across);
+                float offsetAcross = (i - 1.5f) * cellSize * 0.33f;
+                float offsetUp = ((i % 2) - 0.5f) * 0.34f;
 
-                Vector3 smearSize = alongX ? new Vector3(cellSize * 0.4f, 0.22f, 0.02f)
-                                           : new Vector3(0.02f, 0.22f, cellSize * 0.4f);
+                Vector3 smearSize = alongX
+                    ? new Vector3(cellSize * 0.30f, 0.16f + i * 0.02f, 0.006f)
+                    : new Vector3(0.006f, 0.16f + i * 0.02f, cellSize * 0.30f);
 
                 CreateDecoration($"ChalkSmear_{r}_{c}_{i}",
-                                 at + offset + outward.normalized * 0.04f,
+                                 at + across * offsetAcross + Vector3.up * offsetUp + nudge * 1.6f,
                                  smearSize, ProtoMaterials.ChalkDust);
             }
         }
@@ -506,6 +538,10 @@ namespace ZombieHouse.Level
 
             if (_rng.NextDouble() < 0.45)
                 chair.transform.rotation = Quaternion.Euler(84f, Range(0f, 360f), 0f);
+
+            // Dressed after the knock-over roll, so a chair lying on its side is a chair
+            // lying on its side rather than a box wearing a chair.
+            PropLibrary.Dress(chair, "Chair");
 
             // Under a desk is the classic place for a child to be hiding.
             AddHidingSpot(at + new Vector3(0f, 0f, 0.5f), Vector3.back);

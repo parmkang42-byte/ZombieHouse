@@ -49,6 +49,12 @@ namespace ZombieHouse.Enemies
                  + "wandering. Kept low: the trick works because most doors are empty.")]
         [Range(0f, 1f)] [SerializeField] private float ambushShare = 0.55f;
 
+        [Tooltip("Share of the zombies that do not get a door to hide behind which lie down "
+                 + "among the corpses instead. Kept low on purpose: the scare works because "
+                 + "most bodies really are just bodies, and a level where a third of the "
+                 + "floor sits up is not frightening, it is a mechanic.")]
+        [Range(0f, 1f)] [SerializeField] private float playDeadShare = 0.16f;
+
         [Tooltip("How close to a door a spawn has to be to become an ambush.")]
         [SerializeField] private float ambushRadius = 3.2f;
 
@@ -68,6 +74,13 @@ namespace ZombieHouse.Enemies
         [Tooltip("Which zombie of the run is the mutant, counted from zero.")]
         [SerializeField] private int mutantSpawnOrdinal = 4;
         [SerializeField] private float firstReinforcementDelay = 8f;
+
+        [Header("Safe start")]
+        [Tooltip("Nothing is placed within this distance of the player's start. The trickle "
+                 + "spawner already respected a minimum, but PopulateHouse — which is what "
+                 + "every level actually uses — placed one at every marker regardless, so a "
+                 + "marker near the start put a zombie on top of you before you had moved.")]
+        [SerializeField] private float safeStartRadius = 13f;
 
         [Header("Spawn placement")]
         [SerializeField] private float minDistanceFromPlayer = 14f;
@@ -235,12 +248,32 @@ namespace ZombieHouse.Enemies
         /// </summary>
         private System.Collections.IEnumerator PopulateHouse()
         {
+            Vector3 start = _player != null ? _player.position : Vector3.zero;
+            int skipped = 0;
+
             for (int i = 0; i < spawnPoints.Count; i++)
             {
+                // The safe start. A marker inside the radius is left empty rather than
+                // moved: relocating it would put the zombie somewhere the level designer
+                // did not choose, and an empty marker near the door is a much smaller loss
+                // than an ambush the player could not have seen coming.
+                if (_player != null && spawnPoints[i] != null &&
+                    Vector3.Distance(spawnPoints[i].position, start) < safeStartRadius)
+                {
+                    skipped++;
+                    continue;
+                }
+
                 SpawnAt(spawnPoints[i], i);
 
                 // Spread the work over a few frames; a whole house at once hitches.
                 if (i % 4 == 3) yield return null;
+            }
+
+            if (skipped > 0)
+            {
+                Debug.Log($"[ZombieSpawner] {skipped} spawn(s) left empty inside the " +
+                          $"{safeStartRadius:0} m safe start.");
             }
 
             if (GameManager.Instance != null)
@@ -266,6 +299,11 @@ namespace ZombieHouse.Enemies
                 // Nowhere walkable near it: skip rather than strand one inside a trunk.
                 if (!NavMesh.SamplePosition(lurkerPositions[i], out hit, 4f, NavMesh.AllAreas))
                     continue;
+
+                // Snakes obey the safe start too — one lying in the first fern bed you
+                // walk past is exactly the ambush this whole change exists to remove.
+                if (_player != null &&
+                    Vector3.Distance(hit.position, _player.position) < safeStartRadius) continue;
 
                 ZombieProfile.NextKindOverride = lurkerKind;
 
@@ -347,7 +385,8 @@ namespace ZombieHouse.Enemies
                         : isBeast ? beastKind + "_" + ordinal
                         : "Zombie_" + ordinal;
 
-            TrySetAmbush(zombie, position, isMutant || isBeast);
+            if (!TrySetAmbush(zombie, position, isMutant || isBeast))
+                TrySetPlayDead(zombie, isMutant || isBeast);
 
             _live.Add(zombie);
             Spawned++;
@@ -363,10 +402,10 @@ namespace ZombieHouse.Enemies
         /// excluded: a bear folded behind a classroom door is comedy, not menace, and the
         /// mutant is a landmark you are supposed to see coming.
         /// </summary>
-        private void TrySetAmbush(GameObject zombie, Vector3 position, bool excluded)
+        private bool TrySetAmbush(GameObject zombie, Vector3 position, bool excluded)
         {
-            if (excluded || zombie == null) return;
-            if (Random.value > ambushShare) return;
+            if (excluded || zombie == null) return false;
+            if (Random.value > ambushShare) return false;
 
             Door nearest = null;
             float best = ambushRadius * ambushRadius;
@@ -382,7 +421,7 @@ namespace ZombieHouse.Enemies
                 nearest = door;
             }
 
-            if (nearest == null) return;
+            if (nearest == null) return false;
 
             var ambush = zombie.AddComponent<DoorAmbush>();
             ambush.Crouch();
@@ -392,6 +431,41 @@ namespace ZombieHouse.Enemies
             if (ai != null) ai.HoldDormant();
 
             zombie.name += "_Ambush";
+            return true;
+        }
+
+        /// <summary>
+        /// A zombie with no door to hide behind lies down among the corpses instead.
+        ///
+        /// Only ever reached when TrySetAmbush declined, which is why that method now
+        /// reports whether it claimed the zombie. The two are mutually exclusive and the
+        /// combination is nonsense — a body lying flat behind a door is hidden by the door,
+        /// so the door scare and the corpse scare cancel each other out and you get neither.
+        ///
+        /// Excluded on the same terms as the ambush, and for the same reason: the mutant is
+        /// a landmark the player is meant to see coming, and a bear playing dead in a wood
+        /// full of no other bears is not camouflage.
+        /// </summary>
+        private void TrySetPlayDead(GameObject zombie, bool excluded)
+        {
+            if (excluded || zombie == null) return;
+            if (Random.value > playDeadShare) return;
+
+            var playDead = zombie.AddComponent<PlayDead>();
+
+            // If it declines — it already has a door to hide behind — take the component
+            // straight back off. Leaving an inert one attached would make every later count
+            // of "how many are playing dead" wrong.
+            if (!playDead.Lie())
+            {
+                DestroyImmediate(playDead);
+                return;
+            }
+
+            var ai = zombie.GetComponent<ZombieAI>();
+            if (ai != null) ai.HoldDormant();
+
+            zombie.name += "_PlayDead";
         }
 
         private void PruneDead()

@@ -445,6 +445,8 @@ namespace ZombieHouse.Level
                 bool alongX = flight.ColumnStep != 0;
                 float width = cellSize * stairWidthFraction;
 
+                var stepBoxes = new List<GameObject>(steps);
+
                 for (int i = 0; i < steps; i++)
                 {
                     float topHeight = (i + 1) * riser;
@@ -456,10 +458,14 @@ namespace ZombieHouse.Level
                         ? new Vector3(tread, topHeight, width)
                         : new Vector3(width, topHeight, tread);
 
-                    CreateBox($"Step_{floor}_{flight.StartRow}_{flight.StartColumn}_{i}",
+                    stepBoxes.Add(CreateBox(
+                        $"Step_{floor}_{flight.StartRow}_{flight.StartColumn}_{i}",
                         new Vector3(centre.x, baseY + topHeight * 0.5f, centre.z),
-                        size, ProtoMaterials.Wood);
+                        size, ProtoMaterials.Wood));
                 }
+
+                DressStairFlight(flight, floor, start, direction, runDistance, width, baseY,
+                                 stepBoxes);
             }
         }
 
@@ -660,13 +666,35 @@ namespace ZombieHouse.Level
 
                     if (!acrossColumns) pivot.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
 
+                    // Pivot -> hinge -> leaf. The hinge sits at the hanging edge and is
+                    // what turns; the leaf hangs off it. Rotating the leaf directly would
+                    // spin it about its own centre, which is a turnstile, not a door.
+                    var hingeObject = new GameObject("Hinge");
+                    hingeObject.layer = doorLayer;
+                    hingeObject.transform.SetParent(pivot.transform, false);
+
                     var leaf = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     leaf.name = "Leaf";
                     leaf.layer = doorLayer;
-                    leaf.transform.SetParent(pivot.transform, false);
+                    leaf.transform.SetParent(hingeObject.transform, false);
                     leaf.transform.localPosition = new Vector3(half, doorHeight * 0.5f, 0f);
                     leaf.transform.localScale = new Vector3(cellSize, doorHeight, 0.09f);
                     leaf.GetComponent<MeshRenderer>().sharedMaterial = ProtoMaterials.Trim;
+
+                    // A handle on the swinging edge, which is also the clearest way to see
+                    // at a glance which side a door is hung on.
+                    var handle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    handle.name = "Handle";
+                    handle.layer = doorLayer;
+                    handle.transform.SetParent(hingeObject.transform, false);
+                    handle.transform.localPosition =
+                        new Vector3(cellSize * 0.86f, doorHeight * 0.47f, 0.075f);
+                    handle.transform.localScale = new Vector3(0.14f, 0.05f, 0.06f);
+                    handle.GetComponent<MeshRenderer>().sharedMaterial = ProtoMaterials.GunEdge;
+
+                    var handleCollider = handle.GetComponent<Collider>();
+                    if (Application.isPlaying) Destroy(handleCollider);
+                    else DestroyImmediate(handleCollider);
 
                     var door = pivot.AddComponent<Door>();
 
@@ -676,7 +704,7 @@ namespace ZombieHouse.Level
                     trigger.center = new Vector3(half, doorHeight * 0.5f, 0f);
 
                     // Alternate the swing so a landing of them does not look machine-hung.
-                    door.Initialise(leaf.transform, ((r + c) % 2 == 0) ? 1f : -1f);
+                    door.Initialise(hingeObject.transform, ((r + c) % 2 == 0) ? 1f : -1f);
                 }
             }
         }
@@ -857,14 +885,27 @@ namespace ZombieHouse.Level
 
         private void BuildBed(Vector3 centre, int f, int r, int c)
         {
-            CreateBox($"BedFrame_{f}_{r}_{c}", centre + new Vector3(0f, 0.18f, 0f),
+            var frame = CreateBox($"BedFrame_{f}_{r}_{c}", centre + new Vector3(0f, 0.18f, 0f),
                 new Vector3(1.3f, 0.36f, 1.8f), ProtoMaterials.Wood);
-            CreateBox($"BedMattress_{f}_{r}_{c}", centre + new Vector3(0f, 0.46f, 0.05f),
+            var mattress = CreateBox($"BedMattress_{f}_{r}_{c}", centre + new Vector3(0f, 0.46f, 0.05f),
                 new Vector3(1.22f, 0.22f, 1.65f), ProtoMaterials.Linen);
-            CreateBox($"BedPillow_{f}_{r}_{c}", centre + new Vector3(0f, 0.62f, -0.68f),
+            var pillow = CreateBox($"BedPillow_{f}_{r}_{c}", centre + new Vector3(0f, 0.62f, -0.68f),
                 new Vector3(0.9f, 0.14f, 0.3f), ProtoMaterials.Linen);
-            CreateBox($"BedHead_{f}_{r}_{c}", centre + new Vector3(0f, 0.7f, -0.9f),
+            var head = CreateBox($"BedHead_{f}_{r}_{c}", centre + new Vector3(0f, 0.7f, -0.9f),
                 new Vector3(1.3f, 0.8f, 0.1f), ProtoMaterials.Wood);
+
+            // One mesh over all four boxes — bedstead, headboard, a mattress that sags in
+            // the middle and a pillow. The four boxes keep their colliders, so the bed
+            // blocks and is climbed on exactly as it was.
+            //
+            // Anchored on the frame, whose scale is (1.3, 0.36, 1.8); the 0.36 is why the
+            // vertical numbers below look so large in local units. The mesh spans the whole
+            // bed including the headboard, which the frame box does not.
+            PropLibrary.Overlay(frame, "Bed",
+                localCentre: new Vector3(0f, 0.395f / 0.36f, -0.02f / 1.8f),
+                size: new Vector3(1.30f / 1.3f, 1.15f / 0.36f, 1.90f / 1.8f),
+                material: ProtoMaterials.Linen,
+                hide: new[] { frame, mattress, pillow, head });
         }
 
         private void BuildCabinet(Vector3 centre, int f, int r, int c)
@@ -934,12 +975,14 @@ namespace ZombieHouse.Level
             CreateDecoration($"ChandelierChain_{id}", centre + Vector3.up * (chandelierDrop * 0.5f + 0.1f),
                 new Vector3(0.035f, chandelierDrop, 0.035f), ProtoMaterials.Metal);
 
-            CreateDecoration($"ChandelierBody_{id}", centre + Vector3.up * 0.06f,
+            var body = CreateDecoration($"ChandelierBody_{id}", centre + Vector3.up * 0.06f,
                 new Vector3(0.16f, 0.18f, 0.16f), ProtoMaterials.Metal);
 
             // The ring, approximated by eight bars around a circle.
             const int arms = 8;
             const float ringRadius = 0.44f;
+
+            var boxes = new List<GameObject> { body };
 
             for (int i = 0; i < arms; i++)
             {
@@ -949,14 +992,70 @@ namespace ZombieHouse.Level
                 var segment = CreateDecoration($"ChandelierRing_{id}_{i}", centre + offset,
                     new Vector3(0.05f, 0.045f, 0.36f), ProtoMaterials.Metal);
                 segment.transform.localRotation = Quaternion.Euler(0f, angle + 90f, 0f);
+                boxes.Add(segment);
 
-                CreateDecoration($"ChandelierArm_{id}_{i}", centre + offset * 0.5f + Vector3.up * 0.02f,
-                    new Vector3(0.03f, 0.03f, ringRadius), ProtoMaterials.Metal)
-                    .transform.localRotation = Quaternion.Euler(0f, angle, 0f);
+                var arm = CreateDecoration($"ChandelierArm_{id}_{i}", centre + offset * 0.5f + Vector3.up * 0.02f,
+                    new Vector3(0.03f, 0.03f, ringRadius), ProtoMaterials.Metal);
+                arm.transform.localRotation = Quaternion.Euler(0f, angle, 0f);
+                boxes.Add(arm);
 
-                CreateDecoration($"ChandelierCandle_{id}_{i}", centre + offset + Vector3.up * 0.14f,
-                    new Vector3(0.035f, 0.16f, 0.035f), ProtoMaterials.Linen);
+                boxes.Add(CreateDecoration($"ChandelierCandle_{id}_{i}", centre + offset + Vector3.up * 0.14f,
+                    new Vector3(0.035f, 0.16f, 0.035f), ProtoMaterials.Linen));
             }
+
+            // One mesh in place of twenty-five boxes. The chain stays a box: it is a
+            // straight vertical bar, which is the one shape a primitive already gets right.
+            //
+            // Twenty-five hidden renderers per chandelier sounds wasteful, and it is the
+            // cheap half of a trade worth making -- building them anyway is what lets a
+            // missing mesh degrade into exactly the old chandelier instead of into nothing
+            // hanging from the ceiling.
+            var anchor = new GameObject($"ChandelierMesh_{id}");
+            anchor.transform.SetParent(_container, false);
+            anchor.transform.position = centre + Vector3.up * 0.06f;
+
+            // A little rotation so a row of them down a hallway does not read as one object
+            // stamped repeatedly. Visual only -- nothing here has a collider.
+            anchor.transform.rotation = Quaternion.Euler(0f, (r * 37 + c * 61) % 360, 0f);
+
+            PropLibrary.Overlay(anchor, "Chandelier", Vector3.zero,
+                                new Vector3(ringRadius * 2.15f, 0.46f, ringRadius * 2.15f),
+                                ProtoMaterials.Metal, boxes.ToArray());
+        }
+
+        /// <summary>
+        /// Draws the modelled staircase over a flight of step boxes.
+        ///
+        /// The mesh has real treads with nosings -- the couple of centimetres a tread
+        /// overhangs its riser by -- which is the detail that makes a staircase read as a
+        /// staircase rather than as a ramp with lines on it. The boxes underneath keep their
+        /// colliders and stop being drawn, so what the player walks on is unchanged to the
+        /// millimetre and the NavMesh bake is untouched.
+        ///
+        /// The rotation lives on an empty anchor rather than on the visual, because Overlay
+        /// sets position and scale but not rotation, and scaling a rotated child is how a
+        /// staircase ends up sheared. Parenting to an already-rotated empty means the scale
+        /// below is applied in the flight's own frame: X across it, Y up it, Z along it.
+        /// </summary>
+        private void DressStairFlight(StairFlight flight, int floor, Vector3 start,
+                                      Vector3 direction, float runDistance, float width,
+                                      float baseY, List<GameObject> stepBoxes)
+        {
+            Vector3 centre = start + direction * (runDistance * 0.5f);
+
+            var anchor = new GameObject(
+                $"StairFlight_{floor}_{flight.StartRow}_{flight.StartColumn}");
+            anchor.transform.SetParent(_container, false);
+            anchor.transform.position = new Vector3(centre.x, baseY + FloorSpacing * 0.5f, centre.z);
+
+            // The mesh climbs towards +Z and rises towards +Y (Blender Y and Z respectively,
+            // mapped through the exporter). Pointing the anchor's +Z down the flight is all
+            // the orientation it needs, and it works for flights running along either axis.
+            anchor.transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
+
+            PropLibrary.Overlay(anchor, "Stairs", Vector3.zero,
+                                new Vector3(width, FloorSpacing, runDistance),
+                                ProtoMaterials.Wood, stepBoxes.ToArray());
         }
 
         /// <summary>A purely visual box: no collider, so it never touches physics or the NavMesh.</summary>

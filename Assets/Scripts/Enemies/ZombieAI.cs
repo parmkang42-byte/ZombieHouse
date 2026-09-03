@@ -174,6 +174,11 @@ namespace ZombieHouse.Enemies
             // open on something already coming at you rather than on a surprise.
             if (_heldDormant) return;
 
+            // Nothing stirs during the opening grace. Without this the structural fix — a
+            // clear radius around the start — would still be undone by anything that
+            // wandered in during the first second.
+            if (!GameManager.CombatAllowed) return;
+
             if (Vector3.Distance(transform.position, _player.position) <= wakeDistance)
                 Wake();
         }
@@ -432,7 +437,8 @@ namespace ZombieHouse.Enemies
 
             float distance = Vector3.Distance(transform.position, _player.position);
 
-            if (CanSeePlayer && distance <= attackRange && Time.time >= _nextAttackTime)
+            if (CanSeePlayer && distance <= attackRange && Time.time >= _nextAttackTime
+                && GameManager.CombatAllowed)
             {
                 EnterAttack();
                 return;

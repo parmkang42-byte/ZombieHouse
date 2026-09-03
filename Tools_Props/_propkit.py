@@ -19,10 +19,39 @@ import math
 import os
 
 import bpy
+import bmesh
 from mathutils import Vector
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_DIR = os.path.join(PROJECT, "Assets", "Resources", "Props")
+
+
+def block(name, centre, size, bevel=0.012, segments=1):
+    """A bevelled box. The unit of construction for everything in this file."""
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+
+    for vert in bm.verts:
+        vert.co.x *= size[0]
+        vert.co.y *= size[1]
+        vert.co.z *= size[2]
+
+    if bevel > 0.0:
+        bmesh.ops.bevel(bm,
+                        geom=list(bm.verts) + list(bm.edges) + list(bm.faces),
+                        offset=bevel, segments=segments, affect="EDGES", profile=0.5)
+
+    for vert in bm.verts:
+        vert.co += Vector(centre)
+
+    bm.normal_update()
+    bm.to_mesh(mesh)
+    bm.free()
+
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.collection.objects.link(obj)
+    return obj
 
 
 def clear_scene():
@@ -92,6 +121,62 @@ def decimate(obj, target_triangles):
     return before, len(obj.data.polygons)
 
 
+# Unity's Test Props rejects anything over this. Stated here so the Blender side fails at
+# the line that caused it rather than three minutes later in a different program.
+UNITY_TRIANGLE_BUDGET = 1500
+
+
+def bevel(obj, width_fraction=0.010, angle_degrees=30.0, segments=1):
+    """
+    Break every sharp edge, so it has somewhere to catch a highlight.
+
+    Runs AFTER decimation, never before: the decimator collapses low-error geometry first,
+    and a bevel is by construction the lowest-error geometry on the mesh -- bevel first and
+    the collapse eats exactly what you added, leaving the triangles spent and the edges as
+    sharp as they started.
+
+    `angle_degrees` is why this is safe to apply to everything. Only edges sharper than the
+    limit are touched, so a decimated boulder -- whose faces meet at shallow angles almost
+    everywhere -- gains almost nothing, while a desk, which is all right angles, gains a
+    highlight along every one of them. The props that need it most are the ones that cost
+    the least to fix.
+
+    Width is a fraction of the object's smallest dimension rather than an absolute distance,
+    because at this point the prop has not been normalised and every script builds at its own
+    scale. That does mean a large prop gets a proportionally larger bevel in world terms,
+    which is not physically right -- a real chamfer is a property of the tool, not the
+    object. It is however predictable, and predictable beats correct for something whose only
+    job is to catch light.
+    """
+    lo = Vector((float("inf"),) * 3)
+    hi = Vector((float("-inf"),) * 3)
+
+    for vert in obj.data.vertices:
+        for axis in range(3):
+            lo[axis] = min(lo[axis], vert.co[axis])
+            hi[axis] = max(hi[axis], vert.co[axis])
+
+    smallest = min((hi - lo)[axis] for axis in range(3))
+    width = max(1e-5, smallest * width_fraction)
+
+    modifier = obj.modifiers.new(name="Bevel", type="BEVEL")
+    modifier.width = width
+    modifier.segments = segments
+    modifier.limit_method = "ANGLE"
+    modifier.angle_limit = math.radians(angle_degrees)
+
+    # Without this, a bevel wider than the gap between two edges runs the geometry through
+    # itself and produces a prop with black inside-out facets that looks like a shading bug.
+    modifier.harden_normals = False
+    modifier.use_clamp_overlap = True
+
+    before = len(obj.data.polygons)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+
+    return before, len(obj.data.polygons)
+
+
 def normalise_to_unit_box(obj):
     """
     THE CONTRACT: a 1x1x1 bounding box centred on the origin.
@@ -140,7 +225,8 @@ LONG_AXIS_ROTATION = {
 }
 
 
-def finish(obj, name, target_triangles, flat=True, lay_along="y"):
+def finish(obj, name, target_triangles, flat=True, lay_along="y",
+           bevelled=True, bevel_headroom=0.62, bevel_angle=30.0):
     """
     Decimate, orient, shade, normalise, export, then read the file back and check it.
 
@@ -163,7 +249,18 @@ def finish(obj, name, target_triangles, flat=True, lay_along="y"):
         # Baked into the mesh, because object rotation does not reliably survive export.
         bpy.ops.object.transform_apply(rotation=True)
 
-    before, after = decimate(obj, target_triangles)
+    # Decimate short of the target when a bevel is coming, because the bevel spends what is
+    # left. The headroom is a measured fraction rather than a computed one: the cost depends
+    # on how many edges actually exceed the angle limit, which is a property of the shape and
+    # not knowable in advance. The assert at the end of this function is what makes the guess
+    # safe -- get it wrong and the build fails here, loudly, instead of shipping a prop that
+    # quietly blows the budget in Unity.
+    decimate_target = int(target_triangles * bevel_headroom) if bevelled else target_triangles
+    before, after = decimate(obj, decimate_target)
+
+    if bevelled:
+        pre_bevel, after = bevel(obj, angle_degrees=bevel_angle)
+        print("[%s] bevel %d -> %d polygons" % (name, pre_bevel, after))
 
     bpy.context.view_layer.objects.active = obj
 
@@ -238,4 +335,15 @@ def verify_export(path, name):
                 "%s: exported %s centre is %.3f, not 0 — the prop is off-origin"
                 % (name, label, centre[axis]))
 
-    print("[%s] verified on disk: %d faces, unit box at the origin" % (name, faces))
+    # The export is triangulated, so faces are triangles. This is the same number and the
+    # same limit Unity's Test Props asserts -- deliberately duplicated rather than trusted,
+    # because a prop that fails here fails next to the script that built it, while one that
+    # fails in Unity fails in a log full of six levels' worth of other output.
+    if faces > UNITY_TRIANGLE_BUDGET:
+        raise AssertionError(
+            "%s: %d triangles exceeds the %d budget. Lower this prop's target in its own "
+            "script, or pass a smaller bevel_headroom to finish()."
+            % (name, faces, UNITY_TRIANGLE_BUDGET))
+
+    print("[%s] verified on disk: %d triangles (budget %d), unit box at the origin"
+          % (name, faces, UNITY_TRIANGLE_BUDGET))
