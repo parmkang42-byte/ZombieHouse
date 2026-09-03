@@ -3310,6 +3310,7 @@ GameObject:
   - component: {fileID: 2471305301334676717}
   - component: {fileID: 3572456113813028229}
   - component: {fileID: 1977305871919043081}
+  - component: {fileID: 2633861698601079707}
   m_Layer: 9
   m_Name: Snake
   m_TagString: Untagged
@@ -3612,3 +3613,18 @@ MonoBehaviour:
   minimumInterval: 0.26
   audibleRange: 19
   levelFootstepsPerSecond: 14
+--- !u!114 &2633861698601079707
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8902506196979484186}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20a6306f7018af2499d045f0e26b4e3a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieHouse.Enemies.ZombieCallout
+  callRadius: 22
+  cooldownSeconds: 6
+  callVolume: 0.85

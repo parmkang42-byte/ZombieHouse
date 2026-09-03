@@ -3618,6 +3618,7 @@ GameObject:
   - component: {fileID: 2805786019670094047}
   - component: {fileID: 6655079215987539217}
   - component: {fileID: 5399388458667494712}
+  - component: {fileID: 8101307706273267944}
   m_Layer: 9
   m_Name: Mummy
   m_TagString: Untagged
@@ -3944,6 +3945,21 @@ MonoBehaviour:
   minimumInterval: 0.26
   audibleRange: 19
   levelFootstepsPerSecond: 14
+--- !u!114 &8101307706273267944
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4772577351552508049}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20a6306f7018af2499d045f0e26b4e3a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::ZombieHouse.Enemies.ZombieCallout
+  callRadius: 22
+  cooldownSeconds: 6
+  callVolume: 0.85
 --- !u!1 &4929301170610823072
 GameObject:
   m_ObjectHideFlags: 0
