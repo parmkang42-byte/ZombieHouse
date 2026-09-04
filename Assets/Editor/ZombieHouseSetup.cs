@@ -2575,6 +2575,273 @@ namespace ZombieHouse.EditorTools
         ///     door, so the door opens on nothing and the corpse is never seen.
         ///   * A failed light stays failed, and the sun is never a candidate.
         /// </summary>
+        /// <summary>
+        /// The discarding reload: a fresh magazine costs you whatever was still in the old one.
+        ///
+        /// Worth testing on the real arithmetic rather than by reading it, because the change
+        /// is a single character in the place that matters — `AmmoInMagazine +=` became
+        /// `AmmoInMagazine =` — and both compile, both run, and both leave a plausible number
+        /// on the HUD. The difference only shows up when you reload a half-full gun and count
+        /// what came out of the reserve.
+        ///
+        /// Three cases, and the second two are where this goes wrong:
+        ///   * A partial magazine really is destroyed, and the reserve pays a full magazine.
+        ///   * The belt-fed gatling is exempt and still tops up, because a belt is not a
+        ///     magazine and a hundred-round discard would be a quarter of its whole supply.
+        ///   * A reload that would leave you with fewer rounds than you started with is
+        ///     refused, which is the one case where a faithful discard is never what anyone
+        ///     meant.
+        /// </summary>
+        [MenuItem("Zombie House/Test Reload", false, 43)]
+        public static void TestReload()
+        {
+            int problems = 0;
+
+            problems += CheckMagazineIsDiscarded();
+            problems += CheckBeltFedTopsUp();
+            problems += CheckLosingReloadIsRefused();
+            problems += CheckReloadBinding();
+
+            Debug.Log(problems == 0
+                ? "[Reload] PASS — a fresh magazine costs you the old one, except on the belt."
+                : $"[Reload] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>Reloading a half-full magazine destroys what was in it.</summary>
+        private static int CheckMagazineIsDiscarded()
+        {
+            var rig = new GameObject("DiscardProbe");
+            int problems = 0;
+
+            try
+            {
+                var weapon = rig.AddComponent<Weapon>();
+                weapon.ConfigureStats("DiscardTest", 30f, 60f, 0f, 15, 60, 1.0f, 0.3f, 8f, 70f, 55f, 5f);
+
+                // ConfigureAsPowerUp rather than a constructor: Awake fills the magazine and
+                // Awake does not run in edit mode, so a freshly added Weapon reads zero rounds.
+                weapon.ConfigureAsPowerUp(75, false);   // 15 in the gun, 60 in reserve
+
+                // Fire five, so the magazine is 10 of 15 with 60 in reserve.
+                for (int i = 0; i < 5; i++) { weapon.TryFire(); weapon.TickCooldown(1f); }
+
+                int magBefore = weapon.AmmoInMagazine;
+                int reserveBefore = weapon.ReserveAmmo;
+
+                weapon.TryReload();
+                for (int i = 0; i < 200 && weapon.IsReloading; i++) weapon.TickReload(0.05f);
+
+                int magAfter = weapon.AmmoInMagazine;
+                int reserveAfter = weapon.ReserveAmmo;
+                int drawn = reserveBefore - reserveAfter;
+
+                Debug.Log($"[Reload] {magBefore}/{weapon.MagazineSize} + {reserveBefore} reserve " +
+                          $"-> {magAfter}/{weapon.MagazineSize} + {reserveAfter} reserve " +
+                          $"({drawn} drawn from reserve).");
+
+                if (magAfter != weapon.MagazineSize)
+                {
+                    Debug.LogError($"[Reload] Magazine came back at {magAfter}, not full.");
+                    problems++;
+                }
+
+                // The whole point: a full magazine's worth left the reserve, not just the
+                // five rounds that were fired. Topping up would have drawn 5.
+                if (drawn != weapon.MagazineSize)
+                {
+                    Debug.LogError($"[Reload] Reload drew {drawn} rounds from reserve, expected " +
+                                   $"{weapon.MagazineSize}. The partial magazine is being carried " +
+                                   "over instead of discarded.");
+                    problems++;
+                }
+
+                int totalBefore = magBefore + reserveBefore;
+                int totalAfter = magAfter + reserveAfter;
+                if (totalAfter != totalBefore - magBefore)
+                {
+                    Debug.LogError($"[Reload] Total ammunition went {totalBefore} -> {totalAfter}; " +
+                                   $"exactly the {magBefore} in the old magazine should have been lost.");
+                    problems++;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(rig);
+            }
+
+            return problems;
+        }
+
+        /// <summary>The gatling keeps its belt.</summary>
+        private static int CheckBeltFedTopsUp()
+        {
+            var rig = new GameObject("BeltProbe");
+            int problems = 0;
+
+            try
+            {
+                var weapon = rig.AddComponent<Weapon>();
+                weapon.ConfigureStats("Gatling Gun", 34f, 55f, 0f, 100, 300, 3.4f, 1.6f, 3f, 74f, 66f, 45f);
+
+                // IsRotary keys off spinUpSeconds, which ConfigureStats does not set — the
+                // exemption in TickReload is keyed on the same property, so a probe that
+                // skipped this would be testing an ordinary weapon wearing the gatling's name.
+                weapon.ConfigureRotary(spinUp: 0.85f, spinDown: 1.2f);
+
+                if (!weapon.IsRotary)
+                {
+                    Debug.LogError("[Reload] The gatling probe is not rotary; the exemption is " +
+                                   "keyed on IsRotary and would not apply to the real gun either.");
+                    return 1;
+                }
+
+                // 60 in the belt and 240 in reserve, so there is something to top up.
+                weapon.ConfigureAsPowerUp(300, false);
+                for (int i = 0; i < 40; i++) { weapon.TickSpin(2f, true); weapon.TryFire(); weapon.TickCooldown(1f); }
+
+                int magBefore = weapon.AmmoInMagazine;
+                int reserveBefore = weapon.ReserveAmmo;
+
+                weapon.TryReload();
+                for (int i = 0; i < 400 && weapon.IsReloading; i++) weapon.TickReload(0.05f);
+
+                int totalBefore = magBefore + reserveBefore;
+                int totalAfter = weapon.AmmoInMagazine + weapon.ReserveAmmo;
+
+                if (totalAfter != totalBefore)
+                {
+                    Debug.LogError($"[Reload] The gatling lost {totalBefore - totalAfter} rounds " +
+                                   "reloading. A belt is not a magazine and must never be discarded.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[Reload] Gatling: {totalBefore} rounds in, {totalAfter} out — " +
+                              "the belt tops up and nothing is thrown away.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(rig);
+            }
+
+            return problems;
+        }
+
+        /// <summary>A reload that would cost you rounds outright does nothing.</summary>
+        private static int CheckLosingReloadIsRefused()
+        {
+            var rig = new GameObject("LosingProbe");
+            int problems = 0;
+
+            try
+            {
+                var weapon = rig.AddComponent<Weapon>();
+                weapon.ConfigureStats("EndOfSupply", 30f, 60f, 0f, 15, 60, 1.0f, 0.3f, 8f, 70f, 55f, 5f);
+
+                // Twelve rounds total: the magazine takes 12 and the reserve gets 0, so fire
+                // two to leave 10 in the gun -- then hand back exactly 2 to the reserve, which
+                // is the shape that makes a discarding reload a net loss.
+                weapon.ConfigureAsPowerUp(12, false);
+                for (int i = 0; i < 2; i++) { weapon.TryFire(); weapon.TickCooldown(1f); }
+                weapon.AddAmmo(2);
+
+                int magBefore = weapon.AmmoInMagazine;
+                int reserveBefore = weapon.ReserveAmmo;
+
+                weapon.TryReload();
+                for (int i = 0; i < 200 && weapon.IsReloading; i++) weapon.TickReload(0.05f);
+
+                if (weapon.AmmoInMagazine < magBefore)
+                {
+                    Debug.LogError($"[Reload] With {magBefore} in the gun and {reserveBefore} in " +
+                                   $"reserve, reloading left {weapon.AmmoInMagazine} — the player " +
+                                   "pressed a key and destroyed their own ammunition.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[Reload] {magBefore} in the gun against {reserveBefore} in reserve: " +
+                              "the reload is refused rather than losing rounds.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(rig);
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// Shift reloads, and no longer sprints.
+        ///
+        /// Read out of InputReader's source rather than by pressing keys, because there is no
+        /// input in a batch run. Crude, but it catches the thing that actually matters: the
+        /// two must not share a key. SprintHeld reads held state and ReloadPressed reads the
+        /// press edge, so a shared Shift would fire a reload on the first frame of every
+        /// sprint — and a reload now costs a magazine.
+        /// </summary>
+        private static int CheckReloadBinding()
+        {
+            string path = "Assets/Scripts/Player/InputReader.cs";
+            if (!File.Exists(path))
+            {
+                Debug.LogWarning("[Reload] InputReader.cs not found; skipping the binding check.");
+                return 0;
+            }
+
+            int problems = 0;
+
+            foreach (string line in File.ReadAllLines(path))
+            {
+                string text = line.Trim();
+                if (text.StartsWith("//")) continue;
+
+                bool mentionsShift = text.Contains("ShiftKey") || text.Contains("KeyCode.LeftShift")
+                                  || text.Contains("KeyCode.RightShift");
+                if (!mentionsShift) continue;
+
+                if (text.Contains("SprintHeld"))
+                {
+                    Debug.LogError("[Reload] Shift is still bound to sprint: " + text);
+                    problems++;
+                }
+            }
+
+            string source = File.ReadAllText(path);
+            if (!source.Contains("ReloadPressed"))
+            {
+                Debug.LogError("[Reload] InputReader has no ReloadPressed at all.");
+                return problems + 1;
+            }
+
+            // Both input backends have to agree, or the binding depends on which package
+            // happens to be active in this project.
+            int shiftReloads = 0;
+            string[] lines = File.ReadAllLines(path);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].Contains("ReloadPressed")) continue;
+
+                string block = string.Join(" ", lines, i, Mathf.Min(4, lines.Length - i));
+                if (block.Contains("hiftKey") || block.Contains("KeyCode.LeftShift")) shiftReloads++;
+            }
+
+            if (shiftReloads < 2)
+            {
+                Debug.LogError($"[Reload] Only {shiftReloads} of the two InputReader backends bind " +
+                               "Shift to reload; the other still needs it.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Reload] Shift reloads in both input backends, and sprints in neither.");
+            }
+
+            return problems;
+        }
+
         [MenuItem("Zombie House/Test Dread", false, 42)]
         public static void TestDread()
         {
@@ -4810,6 +5077,12 @@ namespace ZombieHouse.EditorTools
                     problems++;
                 }
 
+                // What the magazine still holds when a reload starts is what the reload
+                // throws away. Recorded here rather than inferred later, because after the
+                // reload the number is gone and the only way to check the books balance is
+                // to have written down what went in the bin.
+                int discarded = weapon.AmmoInMagazine;
+
                 weapon.TryReload();
                 if (!weapon.IsReloading)
                 {
@@ -4856,6 +5129,7 @@ namespace ZombieHouse.EditorTools
 
                 // And it must still work a second time, which the old bug also broke.
                 weapon.TryFire();
+                discarded += weapon.AmmoInMagazine;
                 weapon.TryReload();
                 weapon.TickReload(2f);
 
@@ -4865,15 +5139,26 @@ namespace ZombieHouse.EditorTools
                     problems++;
                 }
 
+                // The books must balance. This used to read `ammoBefore - 2` — correct while
+                // a reload topped the magazine up, and wrong the moment reloading started
+                // throwing the old magazine away. The check is not relaxed to a range: rounds
+                // must still never be *created*, and every round that goes missing has to be
+                // one this test can name.
+                const int shotsFired = 2;
                 int ammoAfter = weapon.AmmoInMagazine + weapon.ReserveAmmo;
-                if (ammoAfter != ammoBefore - 2)
+                int expected = ammoBefore - shotsFired - discarded;
+
+                if (ammoAfter != expected)
                 {
-                    Debug.LogError($"[Reload] Ammunition went from {ammoBefore} to {ammoAfter} across two shots — rounds were created or lost.");
+                    Debug.LogError($"[Reload] Ammunition went {ammoBefore} -> {ammoAfter}; expected " +
+                                   $"{expected} ({shotsFired} fired, {discarded} thrown away over two " +
+                                   "reloads). Rounds were created or lost unaccountably.");
                     problems++;
                 }
                 else
                 {
-                    Debug.Log($"[Reload] Ammunition is conserved: {ammoBefore} to {ammoAfter} for two shots fired.");
+                    Debug.Log($"[Reload] The books balance: {ammoBefore} -> {ammoAfter}, " +
+                              $"{shotsFired} fired and {discarded} discarded across two reloads.");
                 }
             }
             finally

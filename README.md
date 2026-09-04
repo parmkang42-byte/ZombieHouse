@@ -364,7 +364,7 @@ Re-run it any time to rebuild the scene from scratch.
 |---|---|
 | WASD | Move |
 | Mouse wheel | Walk forward / backward (scroll up to advance, down to back off) |
-| **Up arrow** (or Shift) | Hold to sprint (loud — zombies hear you from 14 m) |
+| **Up arrow** | Hold to sprint (loud — zombies hear you from 14 m) |
 | Left Ctrl / C | Crouch (quiet, tighter aim) |
 | Q | Jump |
 | LMB | Fire current gun (Desert Eagle .50 in slot 1) |
@@ -375,13 +375,25 @@ Re-run it any time to rebuild the scene from scratch.
 | RMB | Aim down sights (iron sights; crosshair hides) |
 | **Right** Ctrl **or** forward thumb button | Swing katana (offhand, left hand) |
 | F | Torch on / off — and, on a flat cell, fit a spare |
-| R | Reload |
+| **Shift** (or R) | Reload — **throws away whatever is left in the magazine** |
 | Esc | Pause |
 | Enter | Restart after win/lose |
 
 Aiming is on right mouse. The katana is on **right Ctrl** — the one beside the arrow keys,
 away from the movement hand — or the forward ("advance") thumb button, button 5 on an MX
 Vertical. Left Ctrl is back to crouching alongside C, and jump stays on **Q**.
+
+**Shift reloads, and a reload costs you the magazine.** Everything still in the gun goes on
+the floor with the old magazine, so topping up is nearly free when you are almost empty and
+expensive when you are almost full — "reload now or push on with nine rounds" is a real
+question. Two exceptions, both deliberate: the belt-fed gatling tops up instead, because a
+belt is not a magazine and discarding a hundred rounds for a mistimed keypress would cost a
+quarter of its whole supply; and a reload that would leave you with *fewer* rounds than you
+started with is simply refused, which only comes up when the reserve is nearly dry.
+
+Shift used to be a second sprint key alongside the up arrow, and cannot be any more — sprint
+is read as a held key while reload is read on the press, so sharing Shift would have thrown a
+magazine away on the first frame of every sprint. **Sprint is the up arrow now.**
 
 **Space is the action key** — lifting the power cell, fitting it to the motor, cutting a
 hostage loose. It used to fire the rifle; the rifle moved to **E**, which the action key

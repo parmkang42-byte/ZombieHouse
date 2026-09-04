@@ -49,7 +49,11 @@ namespace ZombieHouse.Player
         // Space is a second machete button, so jumping moved to Q.
         public static bool JumpPressed => Kb != null && Kb.qKey.wasPressedThisFrame;
         /// <summary>Hold to sprint: the up arrow, or left shift for the other hand.</summary>
-        public static bool SprintHeld => Kb != null && (Kb.upArrowKey.isPressed || Kb.leftShiftKey.isPressed);
+        // Shift used to sprint here as well, and cannot any more: it reloads now, and a
+        // reload discards the magazine. SprintHeld reads `isPressed` while ReloadPressed
+        // reads `wasPressedThisFrame`, so sharing the key would throw away most of a
+        // magazine on the first frame of every sprint.
+        public static bool SprintHeld => Kb != null && Kb.upArrowKey.isPressed;
 
         // Right Ctrl swings the katana, so left Ctrl is free to crouch as usual.
         public static bool CrouchHeld => Kb != null && (Kb.leftCtrlKey.isPressed || Kb.cKey.isPressed);
@@ -83,7 +87,9 @@ namespace ZombieHouse.Player
         public static bool SelectSlotOnePressed => Kb != null && Kb.digit1Key.wasPressedThisFrame;
         public static bool SelectSlotTwoPressed => Kb != null && Kb.digit2Key.wasPressedThisFrame;
         public static bool SelectSlotThreePressed => Kb != null && Kb.digit3Key.wasPressedThisFrame;
-        public static bool ReloadPressed => Kb != null && Kb.rKey.wasPressedThisFrame;
+        public static bool ReloadPressed => Kb != null && (Kb.rKey.wasPressedThisFrame
+                                                        || Kb.leftShiftKey.wasPressedThisFrame
+                                                        || Kb.rightShiftKey.wasPressedThisFrame);
         /// <summary>Space: cut someone loose, fit the power cell, start the motor.</summary>
         public static bool InteractPressed => Kb != null && Kb.spaceKey.wasPressedThisFrame;
         public static bool FlashlightPressed => Kb != null && Kb.fKey.wasPressedThisFrame;
@@ -109,7 +115,7 @@ namespace ZombieHouse.Player
         // Space is a second machete button, so jumping moved to Q.
         public static bool JumpPressed => Input.GetKeyDown(KeyCode.Q);
         /// <summary>Hold to sprint: the up arrow, or left shift for the other hand.</summary>
-        public static bool SprintHeld => Input.GetKey(KeyCode.UpArrow) || Input.GetKey(KeyCode.LeftShift);
+        public static bool SprintHeld => Input.GetKey(KeyCode.UpArrow);
 
         // Right Ctrl swings the katana, so left Ctrl is free to crouch as usual.
         public static bool CrouchHeld => Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.C);
@@ -139,7 +145,9 @@ namespace ZombieHouse.Player
         public static bool SelectSlotOnePressed => Input.GetKeyDown(KeyCode.Alpha1);
         public static bool SelectSlotTwoPressed => Input.GetKeyDown(KeyCode.Alpha2);
         public static bool SelectSlotThreePressed => Input.GetKeyDown(KeyCode.Alpha3);
-        public static bool ReloadPressed => Input.GetKeyDown(KeyCode.R);
+        public static bool ReloadPressed => Input.GetKeyDown(KeyCode.R)
+                                         || Input.GetKeyDown(KeyCode.LeftShift)
+                                         || Input.GetKeyDown(KeyCode.RightShift);
         /// <summary>Space: cut someone loose, fit the power cell, start the motor.</summary>
         public static bool InteractPressed => Input.GetKeyDown(KeyCode.Space);
         public static bool FlashlightPressed => Input.GetKeyDown(KeyCode.F);

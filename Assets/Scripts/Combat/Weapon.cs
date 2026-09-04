@@ -406,9 +406,27 @@ namespace ZombieHouse.Combat
             return rotation * forward;
         }
 
+        /// <summary>
+        /// Starts a reload. Bound to Shift and R.
+        ///
+        /// **A reload throws away whatever was left in the magazine** on everything except
+        /// the belt-fed gatling. That turns reloading into a decision rather than a reflex:
+        /// topping up between rooms is free when the magazine is nearly empty and expensive
+        /// when it is nearly full, so "should I reload now or push on with nine rounds" is a
+        /// real question with a real cost attached.
+        /// </summary>
         public void TryReload()
         {
             if (IsReloading || AmmoInMagazine >= magazineSize || reserveAmmo <= 0) return;
+
+            // Refuse a reload that would leave the player worse off than they started.
+            //
+            // This is the one place the discard rule gets a guard, and it is for the end of
+            // a level rather than the middle: with 10 in the magazine and 2 in reserve, a
+            // faithful discard hands back a magazine of 2 and destroys 10 rounds for
+            // nothing. Nobody has ever meant to do that. Everywhere else the cost is the
+            // point, so it stands.
+            if (!IsRotary && reserveAmmo < AmmoInMagazine) return;
 
             IsReloading = true;
             _reloadElapsed = 0f;
@@ -442,10 +460,25 @@ namespace ZombieHouse.Combat
             ReloadProgress = Mathf.Clamp01(_reloadElapsed / reloadTime);
             if (_reloadElapsed < reloadTime) return;
 
-            int needed = magazineSize - AmmoInMagazine;
-            int taken = Mathf.Min(needed, reserveAmmo);
-            AmmoInMagazine += taken;
-            reserveAmmo -= taken;
+            if (IsRotary)
+            {
+                // A belt is not a magazine. You do not throw one away to put a fresh one on,
+                // and at a hundred rounds a discard would cost a quarter of the gun's whole
+                // supply for tapping the key at the wrong moment. Belt-fed guns top up.
+                int needed = magazineSize - AmmoInMagazine;
+                int topUp = Mathf.Min(needed, reserveAmmo);
+                AmmoInMagazine += topUp;
+                reserveAmmo -= topUp;
+            }
+            else
+            {
+                // The old magazine goes on the floor with whatever was still in it. Note the
+                // assignment rather than the += that used to be here: the rounds already in
+                // the gun are not carried over, they are gone.
+                int taken = Mathf.Min(magazineSize, reserveAmmo);
+                AmmoInMagazine = taken;
+                reserveAmmo -= taken;
+            }
 
             IsReloading = false;
             ReloadProgress = 1f;
