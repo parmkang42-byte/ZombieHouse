@@ -29,6 +29,14 @@ namespace ZombieHouse.Enemies
         /// </summary>
         public static ZombieKind? NextKindOverride;
 
+        /// <summary>
+        /// Resolves the archetype and pushes it into health and AI. Public because Awake does
+        /// not run in edit mode, so a zombie built by an editor test has no archetype at all —
+        /// it reads as a default 1x walker no matter which kind was asked for, and any test
+        /// measuring size, health or reach is quietly measuring the wrong animal.
+        /// </summary>
+        public void Initialise() => Awake();
+
         private void Awake()
         {
             if (NextKindOverride.HasValue)

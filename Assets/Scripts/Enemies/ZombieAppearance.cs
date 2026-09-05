@@ -57,6 +57,18 @@ namespace ZombieHouse.Enemies
             Randomise();
         }
 
+        /// <summary>
+        /// Rolls this zombie's build, tint and posture. Public because Awake does not run in
+        /// edit mode, so anything inspecting a freshly created zombie there — a test
+        /// measuring whether a boss fits under a ceiling, for instance — would otherwise be
+        /// looking at an unscaled 1x body and drawing confident conclusions from it.
+        /// </summary>
+        public void Initialise()
+        {
+            if (_mpb == null) _mpb = new MaterialPropertyBlock();
+            Randomise();
+        }
+
         private void Randomise()
         {
             var rig = GetComponent<ZombieRig>();
@@ -70,7 +82,20 @@ namespace ZombieHouse.Enemies
                 ? profile.Archetype.SkinTint
                 : Color.white;
 
-            float height = Random.Range(heightScale.x, heightScale.y) * archetypeScale;
+            // Bosses are authored, not rolled. The 0.92-1.07 spread exists so that forty
+            // walkers do not look like one walker stamped forty times, and that reasoning
+            // simply does not apply to something there is exactly one of. Worse, it made the
+            // boss a different size every run: the house's giant has a 10 cm margin under a
+            // 4.2 m ceiling, so a high roll put its head through the floor above on some runs
+            // and not others — the least debuggable kind of bug there is.
+            //
+            // Weight == 0 is the existing marker for "never drawn at random", which every
+            // boss archetype already sets, so this needs no new flag.
+            bool authored = profile != null && profile.Archetype != null && profile.Archetype.Weight == 0f;
+
+            float height = authored
+                ? archetypeScale
+                : Random.Range(heightScale.x, heightScale.y) * archetypeScale;
             float width = Random.Range(widthScale.x, widthScale.y);
 
             // Height scales the whole rig UNIFORMLY on purpose. A non-uniform rig scale

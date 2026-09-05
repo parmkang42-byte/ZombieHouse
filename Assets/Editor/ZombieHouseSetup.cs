@@ -596,6 +596,8 @@ namespace ZombieHouse.EditorTools
             }
 
             Debug.Log($"[Town] Marked spawns that can reach you: {reachable}/{town.ZombieSpawns.Count}");
+
+            problems += CheckBuildingsAreEnterable(startHit.position);
             if (reachable < town.ZombieSpawns.Count * 0.8f)
             {
                 Debug.LogError("[Town] Too many spawns are cut off.");
@@ -881,6 +883,93 @@ namespace ZombieHouse.EditorTools
         }
 
         [MenuItem("Zombie House/Verify School", false, 27)]
+        /// <summary>
+        /// Every building in the town can be walked into from the street.
+        ///
+        /// Checked on the shells themselves rather than on the spawn markers, because the
+        /// markers prove less than they look like they prove: one that had drifted onto the
+        /// boardwalk outside would still report as reachable while the room behind it was
+        /// sealed. This takes a point well inside — past the doorway and past the crates —
+        /// and asks for a complete path from the player's start.
+        ///
+        /// The back wall is the anchor because it is the one piece of every shell that is a
+        /// single unbroken box, so finding it is unambiguous and its position gives both the
+        /// room's depth and which side of the street it is on.
+        ///
+        /// A doorway can be cut, aligned with the false front, and still be unusable: too
+        /// narrow for an agent's 0.72 m diameter, blocked by a crate that landed in it, or
+        /// opening onto a lip the bake would not connect across. All three look completely
+        /// correct in the scene view.
+        /// </summary>
+        private static int CheckBuildingsAreEnterable(Vector3 start)
+        {
+            var backs = new List<Transform>();
+
+            foreach (Transform t in Object.FindObjectsByType<Transform>(FindObjectsSortMode.None))
+                if (t.name.StartsWith("Building_") && t.name.EndsWith("_Back")) backs.Add(t);
+
+            if (backs.Count == 0)
+            {
+                Debug.LogError("[Town] No building shells found — the buildings are solid again.");
+                return 1;
+            }
+
+            int enterable = 0, offMesh = 0, noPath = 0, snappedOut = 0;
+
+            foreach (Transform back in backs)
+            {
+                // A little inside the back wall, on the centre line of the room, and at
+                // FLOOR height rather than the wall's own.
+                //
+                // The y matters more than it looks. A wall's transform sits at its mid-height
+                // — 3.38 m up on a seven-metre building — so building the probe from
+                // back.position + up*0.2 samples a point three and a half metres in the air,
+                // misses the floor by more than the search radius, and reports a perfectly
+                // navigable room as "not on the NavMesh at all". That is what the first
+                // version of this check did for all thirteen buildings, and the level was
+                // never wrong.
+                float inward = Mathf.Sign(back.position.x) * -1.4f;
+                Vector3 inside = new Vector3(back.position.x + inward, 0.2f, back.position.z);
+
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(inside, out hit, 2.5f, NavMesh.AllAreas))
+                {
+                    offMesh++;
+                    continue;
+                }
+
+                // A generous sample radius will happily snap a point inside a sealed room out
+                // to the street outside and then report a perfect path to it. That is exactly
+                // how the existing spawn check reported 25/25 while every interior was
+                // unreachable — so measure how far the sample moved, and refuse to count a
+                // hit that has left the building.
+                float snapped = Vector3.Distance(inside, hit.position);
+                if (snapped > 1.2f)
+                {
+                    snappedOut++;
+                    continue;
+                }
+
+                var path = new NavMeshPath();
+                NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path);
+
+                if (path.status == NavMeshPathStatus.PathComplete) enterable++;
+                else noPath++;
+            }
+
+            if (enterable < backs.Count)
+            {
+                Debug.LogError($"[Town] Only {enterable} of {backs.Count} buildings can be walked " +
+                               $"into. {offMesh} interior(s) are not on the NavMesh at all, " +
+                               $"{snappedOut} sampled to a point outside the building, and " +
+                               $"{noPath} are on the mesh but have no route from the start.");
+                return 1;
+            }
+
+            Debug.Log($"[Town] All {backs.Count} buildings can be entered from the street.");
+            return 0;
+        }
+
         public static void VerifySchool()
         {
             if (!File.Exists(SchoolScenePath))
@@ -2369,11 +2458,19 @@ namespace ZombieHouse.EditorTools
                 // was missing. At 2200-3000 the fight was a minute and a half of holding the
                 // trigger on something that could not be staggered, interrupted or escaped.
                 // Long is not the same as hard; it is just long.
-                if (boss.Health > 1800f)
+                // Raised from 1800 to 3400 on request, and worth being explicit about why
+                // that is not simply undoing the earlier fix. The original bosses were
+                // unwinnable because of *three* things: 2200-3000 health, a chase faster than
+                // the player's sprint, and a two-hit kill inside a six-second regen delay.
+                // Only the last two made the fight unplayable, and both now have their own
+                // checks below that this ceiling does not speak for. A long fight you can
+                // disengage from and survive four mistakes in is an endurance test in the good
+                // sense; the same fight with no escape and one mistake was a coin flip.
+                if (boss.Health > 3400f)
                 {
                     Debug.LogError($"[Boss] {boss.Name} has {boss.Health:0} health — roughly " +
                                    $"{boss.Health / 34f:0} gatling hits landed with it standing on " +
-                                   "you. That is an endurance test, not a fight.");
+                                   "you. Past this it stops being a fight and starts being a wall.");
                     problems++;
                 }
 
@@ -2397,7 +2494,17 @@ namespace ZombieHouse.EditorTools
                     problems++;
                 }
 
-                if (boss.Scale < 1.8f)
+                // A floor on size, but only where the architecture allows one. This used to
+                // be a bare `Scale < 1.8`, which is right for anything under open sky and
+                // wrong indoors: the school's ceiling is 3.4 m and a humanoid runs 1.75 m per
+                // unit of scale, so its giant physically cannot exceed about 1.8x without
+                // standing through the floor above. Demanding both "at least 1.8x" and "fits
+                // in a 3.4 m room" is demanding a contradiction, and the honest resolution is
+                // that a boss which fills its room *is* a boss. Its menace goes into health
+                // and reach instead, which is exactly where the Caretaker's went.
+                bool roomBound = kind == ZombieKind.BossJanitor;
+
+                if (!roomBound && boss.Scale < 1.8f)
                 {
                     Debug.LogError($"[Boss] {boss.Name} is only {boss.Scale:0.0}x scale.");
                     problems++;
@@ -2411,12 +2518,122 @@ namespace ZombieHouse.EditorTools
                           $"{boss.StaggerResistance:P0} stagger resistance.");
             }
 
+            problems += CheckBossFitsItsRoom();
             problems += CheckBossGate();
             problems += CheckEveryLevelHasABoss();
 
             Debug.Log(problems == 0
                 ? "[Boss] PASS — six giants, each guarding its own level's exit."
                 : $"[Boss] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// A boss that fights indoors has to fit indoors.
+        ///
+        /// Measured, not calculated. The rendered height is a random 0.92-1.07 roll times the
+        /// archetype scale times whatever the factory built, and a bear at 2.1x is a
+        /// completely different shape from a shambler at 2.5x — so the only number worth
+        /// trusting comes from building one and reading its bounds. The roll is taken at its
+        /// maximum here, because a boss that fits on average and clips on a bad roll is a bug
+        /// that reproduces one run in three.
+        ///
+        /// Getting this wrong is silent: the head passes through the floor above and nothing
+        /// logs, nothing falls over, and no other test can see it.
+        /// </summary>
+        private static int CheckBossFitsItsRoom()
+        {
+            // Outdoor levels have no ceiling, so no limit — the forest, the town and the
+            // jungle can have giants as tall as they like.
+            var rooms = new (ZombieKind Kind, string Where, float Ceiling)[]
+            {
+                (ZombieKind.BossZombie,  "the house",   4.2f),   // HouseGenerator.wallHeight
+                (ZombieKind.BossJanitor, "the school",  3.4f),   // SchoolGenerator.wallHeight
+                (ZombieKind.BossScarab,  "the tomb",    4.6f),   // PyramidGenerator.wallHeight
+            };
+
+            int problems = 0;
+
+            foreach (var room in rooms)
+            {
+                GameObject probe = BuildBossProbe(room.Kind);
+                if (probe == null)
+                {
+                    Debug.LogError($"[Boss] Could not build a {room.Kind} to measure.");
+                    problems++;
+                    continue;
+                }
+
+                try
+                {
+                    float height = MeasuredHeight(probe);
+
+                    // Headroom rather than a bare fit: a boss whose scalp exactly grazes the
+                    // ceiling still looks wrong when it lurches, and every one of these lurches.
+                    const float Clearance = 0.25f;
+
+                    if (height + Clearance > room.Ceiling)
+                    {
+                        Debug.LogError($"[Boss] {room.Kind} stands {height:0.00} m in {room.Where}, " +
+                                       $"which has a {room.Ceiling:0.0} m ceiling — its head is " +
+                                       "through the floor above.");
+                        problems++;
+                    }
+                    else
+                    {
+                        Debug.Log($"[Boss] {room.Kind}: {height:0.00} m under {room.Where}'s " +
+                                  $"{room.Ceiling:0.0} m ceiling.");
+                    }
+                }
+                finally
+                {
+                    Object.DestroyImmediate(probe);
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>Builds one boss at the top of its height roll, for measuring.</summary>
+        private static GameObject BuildBossProbe(ZombieKind kind)
+        {
+            ZombieProfile.NextKindOverride = kind;
+
+            GameObject probe = kind == ZombieKind.BossScarab
+                ? ZombieHouse.Enemies.ScarabFactory.Create("BossProbe")
+                : ZombieHouse.Enemies.ZombieFactory.Create("BossProbe");
+
+            if (probe == null) return null;
+
+            // Both passes, in this order, and both are needed. The profile resolves which
+            // archetype this is; the appearance pass reads that archetype's Scale and applies
+            // it to the rig. Neither runs in edit mode on its own.
+            //
+            // Skipping the profile is how the first version of this check came to measure a
+            // 1.74 m "boss" and report comfortable headroom: with no archetype resolved,
+            // ZombieAppearance falls back to a scale of 1 and dutifully builds an ordinary
+            // walker. The check passed, and would have passed for any scale whatsoever.
+            var profile = probe.GetComponent<ZombieProfile>();
+            if (profile != null) profile.Initialise();
+
+            var appearance = probe.GetComponent<ZombieAppearance>();
+            if (appearance != null) appearance.Initialise();
+
+            return probe;
+        }
+
+        /// <summary>Real rendered height above the feet, across every renderer.</summary>
+        private static float MeasuredHeight(GameObject subject)
+        {
+            float highest = float.MinValue;
+            float lowest = float.MaxValue;
+
+            foreach (Renderer renderer in subject.GetComponentsInChildren<Renderer>())
+            {
+                highest = Mathf.Max(highest, renderer.bounds.max.y);
+                lowest = Mathf.Min(lowest, renderer.bounds.min.y);
+            }
+
+            return highest <= lowest ? 0f : highest - lowest;
         }
 
         /// <summary>

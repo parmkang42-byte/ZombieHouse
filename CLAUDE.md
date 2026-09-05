@@ -52,13 +52,24 @@ you intended to move them.
 |---|---|---|
 | house | 1924 | 866 |
 | forest | 13381 | 5969 |
-| town | 3238 | 1436 |
+| town | 4405 | 1925 |
 | school | 1487 | 683 |
 | pyramid | 2265 | 1009 |
 | jungle | 12838 | 5732 |
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
+
+The town's numbers jumped on 2026-09-04 when its buildings stopped being solid blocks and
+became enterable shells. That was the intended change, and it is the only time so far these
+have been allowed to move.
+
+**Bosses must fit the room they fight in.** A humanoid is about 1.75 m of height per unit of
+`Scale`, so the house (4.2 m ceiling) caps its giant near 2.2x and the school (3.4 m) near
+1.75x. `Test Boss` measures this on a real built body rather than computing it. Boss size is
+authored, not rolled — `ZombieAppearance` skips the 0.92-1.07 crowd-variety spread for any
+archetype with `Weight == 0`, because a boss that is a different height every run puts its
+head through the ceiling on some runs and not others.
 
 ---
 

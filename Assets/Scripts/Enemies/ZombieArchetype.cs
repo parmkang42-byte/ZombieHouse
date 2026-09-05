@@ -340,13 +340,13 @@ namespace ZombieHouse.Enemies
                 // straight line, and a hit that takes most of a health bar. The fight is
                 // about the room, not about aim — you are meant to be moving.
                 Kind = ZombieKind.BossZombie, Name = "The Landlord", Weight = 0f,
-                Health = 1400f, StaggerResistance = 0.84f,
+                Health = 2900f, StaggerResistance = 0.86f,
                 WanderSpeed = 0.6f, InvestigateSpeed = 1.6f, ChaseSpeed = 3.4f, TurnSpeed = 95f,
                 AttackDamage = 34f, AttackCooldown = 2.2f, AttackWindup = 0.75f,
                 AttackRange = 3.2f,
                 SightRange = 30f, FieldOfView = 130f, MemorySeconds = 40f,
                 HearingMultiplier = 1.2f,
-                Scale = 2.5f, SkinTint = new Color(0.72f, 0.78f, 0.70f),
+                Scale = 2.20f, SkinTint = new Color(0.72f, 0.78f, 0.70f),
                 StrideCyclesPerMetre = 0.30f, LurchDegrees = 9f
             },
             new ZombieArchetype
@@ -354,14 +354,14 @@ namespace ZombieHouse.Enemies
                 // The wood. Rifle-vulnerable like every bear, which keeps the level's own
                 // lesson intact at the size where it matters most.
                 Kind = ZombieKind.BossBear, Name = "The Warden", Weight = 0f,
-                Health = 1500f, StaggerResistance = 0.82f,
+                Health = 3200f, StaggerResistance = 0.84f,
                 WanderSpeed = 0.9f, InvestigateSpeed = 2.4f, ChaseSpeed = 5.2f, TurnSpeed = 130f,
                 AttackDamage = 36f, AttackCooldown = 2.2f, AttackWindup = 0.7f,
                 AttackRange = 3.6f,
                 SightRange = 32f, FieldOfView = 120f, MemorySeconds = 40f,
                 HearingMultiplier = 1.4f,
                 RifleDamageMultiplier = 1.7f,
-                Scale = 2.1f, SkinTint = new Color(1f, 1f, 1f),
+                Scale = 3.4f, SkinTint = new Color(1f, 1f, 1f),
                 StrideCyclesPerMetre = 0.42f, LurchDegrees = 5f
             },
             new ZombieArchetype
@@ -370,13 +370,13 @@ namespace ZombieHouse.Enemies
                 // outside the distance everything else has taught you is safe; at this size
                 // the mop covers most of a classroom.
                 Kind = ZombieKind.BossJanitor, Name = "The Caretaker", Weight = 0f,
-                Health = 1450f, StaggerResistance = 0.83f,
+                Health = 3000f, StaggerResistance = 0.87f,
                 WanderSpeed = 0.7f, InvestigateSpeed = 1.9f, ChaseSpeed = 3.9f, TurnSpeed = 110f,
                 AttackDamage = 32f, AttackCooldown = 2.0f, AttackWindup = 0.65f,
-                AttackRange = 5.4f,
+                AttackRange = 6.1f,
                 SightRange = 30f, FieldOfView = 125f, MemorySeconds = 40f,
                 HearingMultiplier = 1.2f,
-                Scale = 2.2f, SkinTint = new Color(0.62f, 0.66f, 0.62f),
+                Scale = 1.72f, SkinTint = new Color(0.62f, 0.66f, 0.62f),
                 StrideCyclesPerMetre = 0.34f, LurchDegrees = 7f
             },
             new ZombieArchetype
@@ -389,13 +389,13 @@ namespace ZombieHouse.Enemies
                 // the fight: a street is long and open, so you want to be somewhere it has
                 // to turn.
                 Kind = ZombieKind.BossHorse, Name = "The Marshal's Horse", Weight = 0f,
-                Health = 1350f, StaggerResistance = 0.78f,
+                Health = 2900f, StaggerResistance = 0.82f,
                 WanderSpeed = 1.2f, InvestigateSpeed = 3.4f, ChaseSpeed = 6.0f, TurnSpeed = 85f,
                 AttackDamage = 34f, AttackCooldown = 2.2f, AttackWindup = 0.6f,
                 AttackRange = 3.6f,
                 SightRange = 34f, FieldOfView = 115f, MemorySeconds = 40f,
                 HearingMultiplier = 1.3f,
-                Scale = 1.9f, SkinTint = new Color(1f, 1f, 1f),
+                Scale = 3.0f, SkinTint = new Color(1f, 1f, 1f),
                 StrideCyclesPerMetre = 0.5f, LurchDegrees = 4f
             },
             new ZombieArchetype
@@ -404,14 +404,14 @@ namespace ZombieHouse.Enemies
                 // the end of the level is the same as the answer all the way through it,
                 // only now you need all of it.
                 Kind = ZombieKind.BossScarab, Name = "The Queen", Weight = 0f,
-                Health = 1250f, StaggerResistance = 0.76f,
+                Health = 2600f, StaggerResistance = 0.80f,
                 WanderSpeed = 1.1f, InvestigateSpeed = 3.0f, ChaseSpeed = 5.4f, TurnSpeed = 240f,
                 AttackDamage = 28f, AttackCooldown = 1.8f, AttackWindup = 0.5f,
                 AttackRange = 3.4f,
                 SightRange = 26f, FieldOfView = 150f, MemorySeconds = 35f,
                 HearingMultiplier = 1.5f,
                 RifleDamageMultiplier = 0.55f,
-                Scale = 3.2f, SkinTint = new Color(1f, 1f, 1f),
+                Scale = 5.2f, SkinTint = new Color(1f, 1f, 1f),
                 StrideCyclesPerMetre = 0.9f, LurchDegrees = 3f
             },
             new ZombieArchetype
@@ -419,14 +419,14 @@ namespace ZombieHouse.Enemies
                 // The valley. The fastest boss by a distance, and the one you cannot simply
                 // walk away from — the fight is about finding something to put between you.
                 Kind = ZombieKind.BossJaguar, Name = "The Green Mother", Weight = 0f,
-                Health = 1200f, StaggerResistance = 0.72f,
+                Health = 2700f, StaggerResistance = 0.78f,
                 WanderSpeed = 1.4f, InvestigateSpeed = 3.8f, ChaseSpeed = 6.2f, TurnSpeed = 260f,
                 AttackDamage = 33f, AttackCooldown = 2.1f, AttackWindup = 0.55f,
                 AttackRange = 3.8f,
                 SightRange = 34f, FieldOfView = 125f, MemorySeconds = 45f,
                 HearingMultiplier = 1.5f,
                 RifleDamageMultiplier = 1.6f,
-                Scale = 2.3f, SkinTint = new Color(1f, 1f, 1f),
+                Scale = 3.6f, SkinTint = new Color(1f, 1f, 1f),
                 StrideCyclesPerMetre = 0.55f, LurchDegrees = 4f
             },
             new ZombieArchetype

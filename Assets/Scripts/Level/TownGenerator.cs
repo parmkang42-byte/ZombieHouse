@@ -279,16 +279,22 @@ namespace ZombieHouse.Level
             float streetEdge = streetWidth * 0.5f + 2.2f;   // boardwalk sits in front of this
             float centreX = (streetEdge + depth * 0.5f) * side;
 
-            // The body of the building. Solid: you cannot get inside, and neither can they.
+            // The body of the building — a shell now, not a block. You can go in, and so can
+            // everything else, which is the point: the street used to be the whole level and
+            // every fight on it had the same shape.
             Material wall = index % 3 == 0 ? ProtoMaterials.Adobe : ProtoMaterials.Plank;
-            CreateBox($"Building_{side}_{index}", new Vector3(centreX, height * 0.5f, z),
-                new Vector3(depth, height, width), wall, true);
+            BuildInterior(side, z, width, depth, height, index, wall);
 
             // The false front: a flat parapet standing above the roofline, which is the
             // single most recognisable thing about a street like this.
+            //
+            // It needs the doorway cut through it too, and that is not obvious until you walk
+            // into it. This slab stands 0.3 m proud of the building and runs from the ground
+            // to above the roof, so a doorway in the wall behind it opens onto half a metre of
+            // solid plank — a door you can see through and not walk through.
             float frontX = (streetEdge + 0.3f) * side;
-            CreateBox($"FalseFront_{side}_{index}", new Vector3(frontX, height * 0.5f + 1.1f, z),
-                new Vector3(0.5f, height + 2.2f, width + 0.4f), ProtoMaterials.PlankPale, true);
+            BuildFrontageWithDoorway($"FalseFront_{side}_{index}", frontX, 0.5f,
+                                     z, width + 0.4f, height + 2.2f, ProtoMaterials.PlankPale);
 
             // Boardwalk: a raised plank walkway under the porch, and cover to crouch behind.
             float walkX = (streetWidth * 0.5f + 1.1f) * side;
@@ -332,6 +338,131 @@ namespace ZombieHouse.Level
         /// pane at head height reads as somewhere something could be standing, which is
         /// most of what a street like this is for.
         /// </summary>
+        /// <summary>
+        /// Four walls, a roof and a doorway, in place of what used to be a solid block.
+        ///
+        /// The floor is deliberately not built. The desert ground already runs under every
+        /// building and is already baked into the NavMesh, so adding a slab on top would put
+        /// a 6 cm lip in every doorway for nothing — and a lip is exactly the sort of thing
+        /// that stops an agent pathing through and turns a room into a place zombies watch
+        /// you from.
+        /// </summary>
+        private void BuildInterior(float side, float z, float width, float depth, float height,
+                                   int index, Material wall)
+        {
+            const float thickness = 0.35f;
+
+            float streetEdge = streetWidth * 0.5f + 2.2f;
+            float innerX = streetEdge + thickness * 0.5f;          // front wall centre
+            float backX = streetEdge + depth - thickness * 0.5f;   // back wall centre
+
+            // Front, with the way in.
+            BuildFrontageWithDoorway($"Building_{side}_{index}_Front", innerX * side, thickness,
+                                     z, width, height, wall);
+
+            CreateBox($"Building_{side}_{index}_Back", new Vector3(backX * side, height * 0.5f, z),
+                new Vector3(thickness, height, width), wall, true);
+
+            // The two side walls, running front to back.
+            float midX = (streetEdge + depth * 0.5f) * side;
+
+            for (int end = -1; end <= 1; end += 2)
+            {
+                CreateBox($"Building_{side}_{index}_Side{end}",
+                    new Vector3(midX, height * 0.5f, z + (width * 0.5f - thickness * 0.5f) * end),
+                    new Vector3(depth, height, thickness), wall, true);
+            }
+
+            CreateBox($"Building_{side}_{index}_Roof",
+                new Vector3(midX, height - 0.1f, z), new Vector3(depth, 0.2f, width), wall, true);
+
+            FurnishInterior(side, z, width, depth, index, midX);
+        }
+
+        /// <summary>
+        /// A wall with a hole in it: two piers and a lintel over the top.
+        ///
+        /// Used for both the building's own front and the false front standing in front of
+        /// it, with the same z and the same gap, so the two openings line up into one
+        /// doorway. The gap is comfortably wider than a NavMeshAgent's 0.72 m diameter —
+        /// a doorway an agent can only just fit through is one it will refuse to path
+        /// through as soon as anything else is standing near it.
+        /// </summary>
+        private void BuildFrontageWithDoorway(string name, float x, float thickness,
+                                              float z, float width, float height, Material material)
+        {
+            const float gap = 1.9f;
+            const float openingHeight = 2.6f;
+
+            float pier = (width - gap) * 0.5f;
+
+            if (pier > 0.05f)
+            {
+                for (int end = -1; end <= 1; end += 2)
+                {
+                    CreateBox($"{name}_Pier{end}",
+                        new Vector3(x, height * 0.5f, z + (gap * 0.5f + pier * 0.5f) * end),
+                        new Vector3(thickness, height, pier), material, true);
+                }
+            }
+
+            // The lintel: everything above the opening, so the wall reads as continuous.
+            float lintel = height - openingHeight;
+            if (lintel > 0.05f)
+            {
+                CreateBox($"{name}_Lintel",
+                    new Vector3(x, openingHeight + lintel * 0.5f, z),
+                    new Vector3(thickness, lintel, gap), material, true);
+            }
+        }
+
+        /// <summary>
+        /// What is waiting inside. Crates to break the sightline, a chair, and somewhere for
+        /// something to be standing when you come through the door.
+        ///
+        /// The spawn marker is the reason this is worth doing at all. An empty room is a
+        /// cul-de-sac the player checks once and never enters again; a room that has had
+        /// something in it twice is one they clear properly every time.
+        /// </summary>
+        private void FurnishInterior(float side, float z, float width, float depth,
+                                     int index, float midX)
+        {
+            float streetEdge = streetWidth * 0.5f + 2.2f;
+            float backX = (streetEdge + depth * 0.75f) * side;
+
+            // Crates against the back wall, dressed with the real mesh.
+            int crates = 1 + (index % 3);
+            for (int i = 0; i < crates; i++)
+            {
+                float size = Range(0.7f, 1.0f);
+                Vector3 at = new Vector3(backX + Range(-0.6f, 0.6f), size * 0.5f,
+                                         z + Range(-width * 0.3f, width * 0.3f));
+
+                var crate = CreateBox($"ShopCrate_{side}_{index}_{i}", at,
+                    new Vector3(size, size, size), ProtoMaterials.Plank, true);
+                crate.transform.rotation = Quaternion.Euler(0f, Range(0f, 360f), 0f);
+                PropLibrary.Dress(crate, "Crate");
+            }
+
+            // A chair, knocked over as often as not.
+            var chair = CreateBox($"ShopChair_{side}_{index}",
+                new Vector3((streetEdge + depth * 0.45f) * side, 0.28f, z + Range(-1.2f, 1.2f)),
+                new Vector3(0.42f, 0.55f, 0.42f), ProtoMaterials.Plank, true);
+
+            if (_rng.NextDouble() < 0.5)
+                chair.transform.rotation = Quaternion.Euler(84f, Range(0f, 360f), 0f);
+            else
+                chair.transform.rotation = Quaternion.Euler(0f, Range(0f, 360f), 0f);
+
+            PropLibrary.Dress(chair, "Chair");
+
+            // Somewhere to be, and somewhere to come from. Both are inside, so the room is a
+            // place the level uses rather than a cupboard with scenery in it.
+            ZombieSpawns.Add(new Vector3((streetEdge + depth * 0.6f) * side, 0f, z));
+            AddHidingSpot(new Vector3((streetEdge + depth * 0.35f) * side, 0f, z + width * 0.25f),
+                          Vector3.right * -side);
+        }
+
         private void BuildWindows(float side, float index, float z, float width, float height, float frontX)
         {
             int count = Mathf.Max(1, windowsPerBuilding);
