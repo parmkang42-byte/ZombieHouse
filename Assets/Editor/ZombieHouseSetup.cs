@@ -974,7 +974,11 @@ namespace ZombieHouse.EditorTools
             return 0;
         }
 
-        [MenuItem("Zombie House/Build Level 7 Merryland", false, 17)]
+        // Priority 6, immediately after Build Level 6 Jungle. It was 17, and Unity draws a
+        // separator whenever consecutive priorities differ by 11 or more — so the item was
+        // present but detached from the other six and sitting with the maintenance tools,
+        // which is functionally the same as being missing.
+        [MenuItem("Zombie House/Build Level 7 Merryland", false, 6)]
         public static void BuildLevel7()
         {
             BuildMerryland(true);
