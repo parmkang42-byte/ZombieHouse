@@ -348,6 +348,50 @@ nothing. From out there everything inside really is unreachable, and every check
 dutifully agreed. A ten-line throwaway that printed an ASCII map of what could be walked to
 from the start found it in one run, after two rounds of plausible-sounding guesses had not.
 
+### Level 7 — Merryland
+
+A regional theme park that closed in 1987 and was never demolished. `Build Level 7 Merryland`
+/ `Verify Merryland`.
+
+The design problem with an abandoned funfair is that it is very easy to make it merely
+ruined, and ruins are not frightening. What unsettles people about a place like this is that
+it is **intact**: the paint has gone chalky and the lawns are waist high, but the teacups are
+still bolted to their turntable and the castle still says WELCOME over the gate. So the
+palette is sun-bleached rather than grimy and nothing is collapsed. All the horror is carried
+by the four things still working there.
+
+You come in through the turnstiles at the south end and walk the midway north past the
+carousel, the big top, the teacups, the wheel and the funhouse to the castle, which is both
+the landmark you navigate by and the way out. The big top and the funhouse can be walked
+into, on the same shell technique the town's shops use.
+
+**Mister Squeak** — the park's flagship, and the slowest thing in it. The suit is the whole
+design: foam and padding a hand deep, so rifle rounds do 60% and the Desert Eagle is suddenly
+the right tool. It shambles. It does not need to hurry.
+
+**Dilly Dog** — all limb. The costume gave him arms a third again too long and the thing
+inside has been using them for a while. Reach without much damage, the same lesson the
+janitor teaches.
+
+**Missus Squeak** — smaller, quicker, and there is never only one. She arrives in threes,
+which is what turns the row of games stalls into a problem.
+
+**The Storybook Princess** — a walkaround performer, not a costume, and that is the
+unpleasant part. Everything else in the park is hiding behind moulded foam; she is not, and
+the greasepaint has run. She hears further than anything else in the game and was hired for
+her voice: kill her first or fight the whole midway at once.
+
+**The Big Cheese** guards the castle gate — a Mister Squeak built at four times the size for
+the summer parade, with something living in the chassis. It keeps the suit's rifle
+resistance, so the gun that carried you through six levels is the wrong gun here and stays
+the wrong gun at the end.
+
+The park's bed is **Waltz For Nobody**: the calliope, still playing to an empty midway. Two
+ranks a few cents apart, wow and flutter over the top, and every eighth bar the mechanism
+sticks and the melody stops dead for a bar. It is in a major key on purpose — a sad tune in
+an abandoned park is just sad, whereas a cheerful one is indifferent, and indifference is
+what makes a place feel like it does not need you.
+
 ## Getting it running
 
 1. Open Unity Hub → **Add** → select this folder → open with 6000.5.8f1.

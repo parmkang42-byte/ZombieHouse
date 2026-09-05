@@ -12,7 +12,12 @@ namespace ZombieHouse.Enemies
         // The bosses. One per level, each a giant of that level's own creature —
         // so the thing guarding the way out is the thing you have been fighting all
         // along, which is a better ending than a monster from nowhere.
-        BossZombie, BossBear, BossJanitor, BossScarab, BossJaguar, BossHorse
+        BossZombie, BossBear, BossJanitor, BossScarab, BossJaguar, BossHorse,
+
+        // Merryland, the theme park. The costumes are the point: a mascot suit is a
+        // person-shaped thing that is deliberately NOT person-shaped, and every one of
+        // these was built to be reassuring.
+        MascotMouse, MascotDog, MascotBowMouse, StorybookPrincess, BossMascot
     }
 
     /// <summary>
@@ -428,6 +433,104 @@ namespace ZombieHouse.Enemies
                 RifleDamageMultiplier = 1.6f,
                 Scale = 3.6f, SkinTint = new Color(1f, 1f, 1f),
                 StrideCyclesPerMetre = 0.55f, LurchDegrees = 4f
+            },
+            new ZombieArchetype
+            {
+                // MISTER SQUEAK -- the park's flagship, and the slowest thing in it.
+                //
+                // The suit is the whole design. Foam and padding a hand deep soak rifle
+                // rounds that would drop a walker, so it is the one enemy in the game the
+                // rifle is *bad* against and the shotgun-adjacent Desert Eagle is good
+                // against. It shambles. It does not need to hurry, and something that does
+                // not hurry while you back away from it is worse than something that runs.
+                Kind = ZombieKind.MascotMouse, Name = "Mister Squeak", Weight = 34f,
+                Health = 460f, StaggerResistance = 0.88f,
+                WanderSpeed = 0.5f, InvestigateSpeed = 1.3f, ChaseSpeed = 2.1f, TurnSpeed = 70f,
+                AttackDamage = 26f, AttackCooldown = 2.0f, AttackWindup = 0.7f,
+                AttackRange = 2.4f,
+                SightRange = 20f, FieldOfView = 95f, MemorySeconds = 26f,
+                HearingMultiplier = 0.8f,
+                RifleDamageMultiplier = 0.6f,
+                Scale = 1.24f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0.34f, LurchDegrees = 11f
+            },
+            new ZombieArchetype
+            {
+                // DILLY DOG -- all limb. The costume gave him arms a third again too long
+                // and the thing inside has been using them for a while now.
+                //
+                // Reach without much damage, the same lesson the janitor teaches: what makes
+                // it frightening is being hit from further away than you judged, not the
+                // size of the hit.
+                Kind = ZombieKind.MascotDog, Name = "Dilly Dog", Weight = 26f,
+                Health = 300f, StaggerResistance = 0.7f,
+                WanderSpeed = 0.8f, InvestigateSpeed = 2.2f, ChaseSpeed = 3.6f, TurnSpeed = 130f,
+                AttackDamage = 21f, AttackCooldown = 1.7f, AttackWindup = 0.5f,
+                AttackRange = 3.4f,
+                SightRange = 26f, FieldOfView = 120f, MemorySeconds = 24f,
+                HearingMultiplier = 1.1f,
+                RifleDamageMultiplier = 0.85f,
+                Scale = 1.34f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0.46f, LurchDegrees = 9f
+            },
+            new ZombieArchetype
+            {
+                // MISSUS SQUEAK -- smaller, quicker, and there is never only one.
+                //
+                // The counterpart costume, and the one that turns a corridor of stalls into
+                // a problem. Low health and low stagger resistance: they die easily and
+                // they arrive in threes, which is a completely different kind of pressure
+                // from her opposite number.
+                Kind = ZombieKind.MascotBowMouse, Name = "Missus Squeak", Weight = 30f,
+                Health = 180f, StaggerResistance = 0.34f,
+                WanderSpeed = 0.9f, InvestigateSpeed = 2.6f, ChaseSpeed = 4.3f, TurnSpeed = 165f,
+                AttackDamage = 15f, AttackCooldown = 1.3f, AttackWindup = 0.34f,
+                AttackRange = 2.1f,
+                SightRange = 23f, FieldOfView = 125f, MemorySeconds = 22f,
+                HearingMultiplier = 1.3f,
+                Scale = 1.06f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0.58f, LurchDegrees = 7f
+            },
+            new ZombieArchetype
+            {
+                // THE STORYBOOK PRINCESS -- a walkaround performer, not a costume. There is
+                // a face under the paint and that is the unpleasant part.
+                //
+                // Hears further than anything else in the park and remembers longest. The
+                // gown drags, so you hear her before you see her, and she was hired for her
+                // voice: the loudest caller in the game, which makes her the one you must
+                // kill first or fight the whole midway at once.
+                Kind = ZombieKind.StorybookPrincess, Name = "The Storybook Princess", Weight = 20f,
+                Health = 210f, StaggerResistance = 0.3f,
+                WanderSpeed = 0.7f, InvestigateSpeed = 2.4f, ChaseSpeed = 4.6f, TurnSpeed = 150f,
+                AttackDamage = 19f, AttackCooldown = 1.5f, AttackWindup = 0.4f,
+                AttackRange = 2.2f,
+                SightRange = 30f, FieldOfView = 135f, MemorySeconds = 42f,
+                HearingMultiplier = 1.9f,
+                Scale = 1.1f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0.44f, LurchDegrees = 5f
+            },
+            new ZombieArchetype
+            {
+                // THE BIG CHEESE -- the parade float that was never packed away.
+                //
+                // A Mister Squeak built at four times the size for the summer parade, with
+                // something living in the chassis. Outdoors, so nothing caps its height the
+                // way the house and school cap theirs.
+                //
+                // Keeps the suit's rifle resistance, so the level's own lesson holds at the
+                // size where it matters most: the gun that has carried you through six
+                // levels is the wrong gun here, and it stays the wrong gun at the end.
+                Kind = ZombieKind.BossMascot, Name = "The Big Cheese", Weight = 0f,
+                Health = 3100f, StaggerResistance = 0.85f,
+                WanderSpeed = 0.6f, InvestigateSpeed = 1.7f, ChaseSpeed = 3.7f, TurnSpeed = 85f,
+                AttackDamage = 35f, AttackCooldown = 2.2f, AttackWindup = 0.8f,
+                AttackRange = 4.2f,
+                SightRange = 32f, FieldOfView = 120f, MemorySeconds = 45f,
+                HearingMultiplier = 1.1f,
+                RifleDamageMultiplier = 0.5f,
+                Scale = 3.2f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0.26f, LurchDegrees = 13f
             },
             new ZombieArchetype
             {

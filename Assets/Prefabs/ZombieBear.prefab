@@ -2979,7 +2979,7 @@ MonoBehaviour:
   ownerBehaviour: {fileID: 3980503985431748072}
   damageMultiplier: 0.7
   countsAsCritical: 0
---- !u!1 &5963374714574118299
+--- !u!1 &5939419433102469701
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -2987,41 +2987,8 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 4984794027167762042}
-  m_Layer: 9
-  m_Name: Hip_R
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &4984794027167762042
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5963374714574118299}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.34, y: 1.15, z: -0.95}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 8778694050576390124}
-  - {fileID: 6156705464923356222}
-  m_Father: {fileID: 5311570113763748677}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &5975207505723824083
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2796052359164990250}
-  - component: {fileID: 5381756668460307876}
+  - component: {fileID: 6802308548379268538}
+  - component: {fileID: 2061767829952414462}
   m_Layer: 9
   m_Name: EyeGlow
   m_TagString: Untagged
@@ -3029,13 +2996,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &2796052359164990250
+--- !u!4 &6802308548379268538
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5975207505723824083}
+  m_GameObject: {fileID: 5939419433102469701}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
@@ -3044,13 +3011,13 @@ Transform:
   m_Children: []
   m_Father: {fileID: 8021731169390256942}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!108 &5381756668460307876
+--- !u!108 &2061767829952414462
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5975207505723824083}
+  m_GameObject: {fileID: 5939419433102469701}
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 2
@@ -3109,6 +3076,39 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!1 &5963374714574118299
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4984794027167762042}
+  m_Layer: 9
+  m_Name: Hip_R
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4984794027167762042
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5963374714574118299}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.34, y: 1.15, z: -0.95}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 8778694050576390124}
+  - {fileID: 6156705464923356222}
+  m_Father: {fileID: 5311570113763748677}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &5984357564797473533
 GameObject:
   m_ObjectHideFlags: 0
@@ -4259,7 +4259,7 @@ Transform:
   m_LocalScale: {x: 0.085, y: 0.075, z: 0.07}
   m_ConstrainProportionsScale: 0
   m_Children:
-  - {fileID: 2796052359164990250}
+  - {fileID: 6802308548379268538}
   m_Father: {fileID: 8585375748203298961}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!33 &8630274568247901205

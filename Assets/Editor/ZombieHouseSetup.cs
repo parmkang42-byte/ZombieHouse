@@ -34,6 +34,11 @@ namespace ZombieHouse.EditorTools
         private const string SchoolScenePath = ScenesFolder + "/Level4_School.unity";
         private const string PyramidScenePath = ScenesFolder + "/Level5_Pyramid.unity";
         private const string JungleScenePath = ScenesFolder + "/Level6_Jungle.unity";
+        private const string MerrylandScenePath = ScenesFolder + "/Level7_Merryland.unity";
+        private const string MascotMousePrefabPath = PrefabsFolder + "/MascotMouse.prefab";
+        private const string MascotDogPrefabPath = PrefabsFolder + "/MascotDog.prefab";
+        private const string MascotBowMousePrefabPath = PrefabsFolder + "/MascotBowMouse.prefab";
+        private const string PrincessPrefabPath = PrefabsFolder + "/StorybookPrincess.prefab";
         private const string ZombiePrefabPath = PrefabsFolder + "/Zombie.prefab";
         private const string BearPrefabPath = PrefabsFolder + "/ZombieBear.prefab";
         private const string HorsePrefabPath = PrefabsFolder + "/ZombieHorse.prefab";
@@ -882,7 +887,6 @@ namespace ZombieHouse.EditorTools
             school.Generate();
         }
 
-        [MenuItem("Zombie House/Verify School", false, 27)]
         /// <summary>
         /// Every building in the town can be walked into from the street.
         ///
@@ -970,6 +974,405 @@ namespace ZombieHouse.EditorTools
             return 0;
         }
 
+        [MenuItem("Zombie House/Build Level 7 Merryland", false, 17)]
+        public static void BuildLevel7()
+        {
+            BuildMerryland(true);
+        }
+
+        public static void BuildLevel7Automated()
+        {
+            BuildMerryland(false);
+        }
+
+        /// <summary>
+        /// MERRYLAND — an abandoned theme park, and the four things still working there.
+        ///
+        /// The population is the level. Everything else in the game gets its character from
+        /// architecture; this one gets it from four costumes, and the park is mostly a stage
+        /// for them to come round a corner in.
+        /// </summary>
+        private static void BuildMerryland(bool interactive)
+        {
+            EnsureFolder(ScenesFolder);
+            EnsureFolder(PrefabsFolder);
+            EnsureFolder("Assets/Resources");
+            EnsureFolder(MaterialsFolder);
+            EnsureFolder(MeshesFolder);
+
+            int playerLayer = EnsureLayer(PlayerLayerName);
+            int enemyLayer = EnsureLayer(EnemyLayerName);
+            EnsureLayer(CorpseLayerName);
+            EnsureLayer(ViewModelLayerName);
+            EnsureLayer(DoorLayerName);
+
+            CreatePlaceholderMaterials();
+            ProtoMaterials.ClearCache();
+
+            GameObject mousePrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotMouse,
+                                                       MascotMousePrefabPath);
+            GameObject dogPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotDog,
+                                                     MascotDogPrefabPath);
+            GameObject bowPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotBowMouse,
+                                                     MascotBowMousePrefabPath);
+            GameObject princessPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Princess,
+                                                          PrincessPrefabPath);
+
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            ConfigureMerrylandLighting();
+            GameObject player = BuildPlayerRig(playerLayer, enemyLayer);
+            BuildMerrylandManagers(mousePrefab, dogPrefab, bowPrefab, princessPrefab, player);
+            ApplyPostFx(player, LevelMood.Town);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, MerrylandScenePath);
+            AddSceneToBuildSettings(MerrylandScenePath);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.Log("[ZombieHouse] Level 7 built at " + MerrylandScenePath + " — press Play.");
+
+            if (!interactive) return;
+
+            EditorUtility.DisplayDialog("Level 7 ready",
+                "Scene saved to " + MerrylandScenePath + ".\n\nPress Play.\n\n" +
+                "Walk the midway to the castle. Whatever you do, do not shoot the ones in " +
+                "the suits with the rifle — there is a hand's depth of foam in the way.",
+                "Into the park");
+        }
+
+        /// <summary>
+        /// Night in an open park. Some moon, a lot of fog, and almost nothing else.
+        ///
+        /// Brighter ambient than the school or the tomb, because this level is outdoors and
+        /// pitch black outdoors reads as a bug rather than as night — but the fog is heavy,
+        /// so distance still hides things. The point is that you can see the shapes of the
+        /// attractions from a long way off and cannot tell what is standing under them.
+        /// </summary>
+        private static void ConfigureMerrylandLighting()
+        {
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.085f, 0.088f, 0.115f);
+
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogColor = new Color(0.055f, 0.058f, 0.075f);
+            RenderSettings.fogDensity = 0.019f;
+
+            var moonObject = new GameObject("Moon");
+            var moon = moonObject.AddComponent<Light>();
+            moon.type = LightType.Directional;
+            moon.color = new Color(0.62f, 0.68f, 0.92f);
+            moon.intensity = 0.22f;
+            moon.shadows = LightShadows.Soft;
+            moonObject.transform.rotation = Quaternion.Euler(38f, 214f, 0f);
+
+            RenderSettings.sun = moon;
+            RenderSettings.skybox = null;
+        }
+
+        private static void BuildMerrylandManagers(GameObject mousePrefab, GameObject dogPrefab,
+                                                   GameObject bowPrefab, GameObject princessPrefab,
+                                                   GameObject player)
+        {
+            var managers = new GameObject("--- Managers ---");
+
+            var audioObject = new GameObject("GameAudio");
+            audioObject.transform.SetParent(managers.transform, false);
+            var parkAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
+            audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
+            audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
+
+            var audioSo = new SerializedObject(parkAudio);
+            audioSo.FindProperty("musicTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.MusicPark;
+            audioSo.FindProperty("tensionTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.TensionPark;
+            audioSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var gameManagerObject = new GameObject("GameManager");
+            gameManagerObject.transform.SetParent(managers.transform, false);
+            gameManagerObject.AddComponent<GameManager>();
+            gameManagerObject.AddComponent<HudController>();
+
+            var impactObject = new GameObject("ImpactSystem");
+            impactObject.transform.SetParent(managers.transform, false);
+            impactObject.AddComponent<ZombieHouse.Fx.ImpactSystem>();
+
+            var parkObject = new GameObject("Merryland");
+            var park = parkObject.AddComponent<MerrylandGenerator>();
+
+            var navMeshObject = new GameObject("NavMesh");
+            navMeshObject.transform.SetParent(managers.transform, false);
+            var baker = navMeshObject.AddComponent<RuntimeNavMeshBaker>();
+
+            var spawnerObject = new GameObject("ZombieSpawner");
+            spawnerObject.transform.SetParent(managers.transform, false);
+            var spawner = spawnerObject.AddComponent<ZombieSpawner>();
+
+            // Mister Squeak is the baseline. A fifth of the park is Dilly Dog, using the
+            // same "beast" slot the bears and janitors use — it is a second prefab with a
+            // share, and nothing about that slot is quadruped.
+            spawner.ConfigureBeasts(dogPrefab, 0.2f, ZombieKind.MascotDog);
+
+            var directorObject = new GameObject("LevelDirector");
+            directorObject.transform.SetParent(managers.transform, false);
+            var director = directorObject.AddComponent<LevelDirector>();
+
+            var so = new SerializedObject(director);
+            AssignReference(so, "levelSourceBehaviour", park);
+            AssignReference(so, "spawner", spawner);
+            AssignReference(so, "navMeshBaker", baker);
+            AssignReference(so, "player", player.transform);
+            AssignReference(so, "zombiePrefab", mousePrefab);
+
+            // The Big Cheese: the parade float, on the mouse's own prefab at 3.2x.
+            AssignReference(so, "bossPrefab", mousePrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossMascot;
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            // Missus Squeak arrives in threes and fours, which is what turns the stall row
+            // into a problem rather than a corridor.
+            spawner.ConfigurePacks(bowPrefab, 0.3f, ZombieKind.MascotBowMouse, 3, 4);
+
+            // The princesses are placed rather than drawn: they belong at the attractions,
+            // where a performer would have been working, and one that had wandered in off a
+            // random marker would not read as a performer at all.
+            var princessSpots = new List<Vector3>();
+            park.Generate();
+
+            foreach (Vector3 spot in park.PowerCellCandidates) princessSpots.Add(spot);
+            spawner.ConfigureLurkers(princessPrefab, ZombieKind.StorybookPrincess, princessSpots);
+        }
+
+        [MenuItem("Zombie House/Verify Merryland", false, 28)]
+        public static void VerifyMerryland()
+        {
+            EditorSceneManager.OpenScene(MerrylandScenePath, OpenSceneMode.Single);
+
+            var park = Object.FindAnyObjectByType<MerrylandGenerator>();
+            if (park == null)
+            {
+                Debug.LogError("[Merryland] No MerrylandGenerator in the scene.");
+                return;
+            }
+
+            ProtoMaterials.ClearCache();
+            park.Generate();
+
+            var baker = Object.FindAnyObjectByType<RuntimeNavMeshBaker>();
+            baker.SetBakeVolume(park.LevelBounds.center, park.LevelBounds.size);
+            baker.Bake();
+
+            NavMeshTriangulation tri = NavMesh.CalculateTriangulation();
+            Debug.Log($"[Merryland] NavMesh: {tri.vertices.Length} vertices, " +
+                      $"{tri.indices.Length / 3} triangles.");
+
+            int problems = 0;
+
+            NavMeshHit startHit;
+            if (!NavMesh.SamplePosition(park.PlayerSpawn, out startHit, 6f, NavMesh.AllAreas))
+            {
+                Debug.LogError("[Merryland] The turnstiles are not on the NavMesh.");
+                Debug.Log("[Merryland] FAIL — 1 problem(s).");
+                return;
+            }
+
+            problems += CheckReachable(startHit.position, park.ExitPosition, "the castle gate");
+            problems += CheckReachable(startHit.position, park.MotorPosition, "the gate motor");
+
+            int reachable = 0;
+            foreach (Vector3 spawn in park.ZombieSpawns)
+            {
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(spawn, out hit, 4f, NavMesh.AllAreas)) continue;
+
+                var path = new NavMeshPath();
+                NavMesh.CalculatePath(startHit.position, hit.position, NavMesh.AllAreas, path);
+                if (path.status == NavMeshPathStatus.PathComplete) reachable++;
+            }
+
+            Debug.Log($"[Merryland] Marked spawns that can reach you: {reachable}/{park.ZombieSpawns.Count}");
+            if (reachable < park.ZombieSpawns.Count)
+            {
+                Debug.LogError($"[Merryland] {park.ZombieSpawns.Count - reachable} spawn(s) are stranded.");
+                problems++;
+            }
+
+            foreach (Vector3 candidate in park.PowerCellCandidates)
+                problems += CheckReachable(startHit.position, candidate, "a power cell position");
+
+            foreach (Vector3 survivor in park.SurvivorSpawns)
+                problems += CheckReachable(startHit.position, survivor, "a survivor");
+
+            problems += CheckAttractionsAreEnterable(startHit.position);
+            problems += CheckMascotsAreNotMagenta();
+            problems += CheckParkMusic();
+
+            Debug.Log(problems == 0
+                ? "[Merryland] PASS — the midway runs to the castle and the tents can be walked into."
+                : $"[Merryland] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>A complete path from A to B, or an error naming what could not be got to.</summary>
+        private static int CheckReachable(Vector3 from, Vector3 to, string what)
+        {
+            NavMeshHit hit;
+            if (!NavMesh.SamplePosition(to, out hit, 6f, NavMesh.AllAreas))
+            {
+                Debug.LogError($"[Merryland] {what} is not on the NavMesh.");
+                return 1;
+            }
+
+            var path = new NavMeshPath();
+            NavMesh.CalculatePath(from, hit.position, NavMesh.AllAreas, path);
+
+            if (path.status == NavMeshPathStatus.PathComplete) return 0;
+
+            Debug.LogError($"[Merryland] {what} cannot be reached from the turnstiles.");
+            return 1;
+        }
+
+        /// <summary>
+        /// The big top and the funhouse can be walked into.
+        ///
+        /// Same lesson as the town: a doorway can be cut and still be unusable, and the
+        /// spawn-reachability check above cannot tell the difference because its sample
+        /// radius will happily snap a marker inside a sealed tent out onto the grass and
+        /// report a fine path to that. So this samples at floor height and refuses a hit
+        /// that has moved far enough to have left the building.
+        /// </summary>
+        private static int CheckAttractionsAreEnterable(Vector3 start)
+        {
+            var interiors = new (string Name, Vector3 At)[]
+            {
+                ("the big top", new Vector3(26f, 0.2f, -20f)),
+                ("the funhouse", new Vector3(-27f, 0.2f, 34f)),
+            };
+
+            int problems = 0;
+
+            foreach (var interior in interiors)
+            {
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(interior.At, out hit, 2.5f, NavMesh.AllAreas))
+                {
+                    Debug.LogError($"[Merryland] The inside of {interior.Name} is not on the NavMesh.");
+                    problems++;
+                    continue;
+                }
+
+                if (Vector3.Distance(interior.At, hit.position) > 1.5f)
+                {
+                    Debug.LogError($"[Merryland] The sample for {interior.Name} snapped " +
+                                   $"{Vector3.Distance(interior.At, hit.position):0.0} m away — it is " +
+                                   "measuring the grass outside, not the inside.");
+                    problems++;
+                    continue;
+                }
+
+                var path = new NavMeshPath();
+                NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path);
+
+                if (path.status != NavMeshPathStatus.PathComplete)
+                {
+                    Debug.LogError($"[Merryland] {interior.Name} is sealed — its inside is on the " +
+                                   "NavMesh but there is no route to it.");
+                    problems++;
+                    continue;
+                }
+
+                Debug.Log($"[Merryland] {interior.Name} can be walked into.");
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// Every mascot renderer points at a material that exists on disk.
+        ///
+        /// This is the jungle's pink-snake bug, and it is worth a dedicated check on any
+        /// level that ships new creature prefabs. ProtoMaterials.Get silently builds a
+        /// material in memory when the .mat asset is missing; that works perfectly in play
+        /// mode and does NOT survive being saved into a prefab, so the prefab ships with a
+        /// dangling reference and renders magenta. Nothing errors. The level looks perfect
+        /// apart from four bright pink cartoon characters.
+        /// </summary>
+        private static int CheckMascotsAreNotMagenta()
+        {
+            var paths = new[]
+            {
+                MascotMousePrefabPath, MascotDogPrefabPath,
+                MascotBowMousePrefabPath, PrincessPrefabPath,
+            };
+
+            int problems = 0;
+
+            foreach (string path in paths)
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null)
+                {
+                    Debug.LogError($"[Merryland] {path} was never built.");
+                    problems++;
+                    continue;
+                }
+
+                int dangling = 0, checked_ = 0;
+
+                foreach (Renderer renderer in prefab.GetComponentsInChildren<Renderer>(true))
+                {
+                    Material material = renderer.sharedMaterial;
+                    checked_++;
+
+                    if (material == null || !AssetDatabase.Contains(material)) dangling++;
+                }
+
+                if (dangling > 0)
+                {
+                    Debug.LogError($"[Merryland] {System.IO.Path.GetFileName(path)}: {dangling} of " +
+                                   $"{checked_} renderers point at a material that is not an asset. " +
+                                   "They will render magenta in a built scene.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[Merryland] {System.IO.Path.GetFileName(path)}: all {checked_} " +
+                              "renderers use materials that exist on disk.");
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>The park plays its own bed, not somebody else's.</summary>
+        private static int CheckParkMusic()
+        {
+            var audio = Object.FindAnyObjectByType<ZombieHouse.Audio.GameAudio>();
+            if (audio == null)
+            {
+                Debug.LogError("[Merryland] No GameAudio in the scene.");
+                return 1;
+            }
+
+            var so = new SerializedObject(audio);
+            var track = (ZombieHouse.Audio.Sfx)so.FindProperty("musicTrack").enumValueIndex;
+            var tension = (ZombieHouse.Audio.Sfx)so.FindProperty("tensionTrack").enumValueIndex;
+
+            if (track != ZombieHouse.Audio.Sfx.MusicPark ||
+                tension != ZombieHouse.Audio.Sfx.TensionPark)
+            {
+                Debug.LogError($"[Merryland] Playing {track} / {tension} rather than its own bed. " +
+                               "This is what the town and the school did for months.");
+                return 1;
+            }
+
+            Debug.Log("[Merryland] Music: MusicPark with TensionPark over it.");
+            return 0;
+        }
+
+        [MenuItem("Zombie House/Verify School", false, 27)]
         public static void VerifySchool()
         {
             if (!File.Exists(SchoolScenePath))
@@ -2728,6 +3131,7 @@ namespace ZombieHouse.EditorTools
                 ("School", SchoolScenePath, ZombieKind.BossJanitor),
                 ("Pyramid", PyramidScenePath, ZombieKind.BossScarab),
                 ("Jungle", JungleScenePath, ZombieKind.BossJaguar),
+                ("Merryland", MerrylandScenePath, ZombieKind.BossMascot),
             };
 
             int problems = 0;
@@ -2809,6 +3213,214 @@ namespace ZombieHouse.EditorTools
         ///     refused, which is the one case where a faithful discard is never what anyone
         ///     meant.
         /// </summary>
+        /// <summary>
+        /// Merryland's four costumes and the thing in the parade float.
+        ///
+        /// The park's whole identity is its population, so this checks the population rather
+        /// than the park. Three things matter and all three are invisible from a screenshot:
+        ///
+        ///   * **The suit resists rifle rounds.** That is the level's lesson — a hand's depth
+        ///     of foam is exactly what a high-velocity round is worst against — and it is the
+        ///     only thing making the player change weapon after six levels of not having to.
+        ///     If the multiplier drifts back to 1 the level still looks and plays fine and
+        ///     quietly stops teaching anything.
+        ///   * **The head is enormous.** A mascot head that is merely head-sized is a person
+        ///     in a onesie. Measured against an ordinary zombie's head rather than against a
+        ///     constant, so it survives anyone rescaling the base body.
+        ///   * **The princess hears further than anything else in the game**, because she is
+        ///     the caller: kill her first or fight the whole midway at once.
+        /// </summary>
+        [MenuItem("Zombie House/Test Merryland", false, 44)]
+        public static void TestMerryland()
+        {
+            int problems = 0;
+
+            problems += CheckMascotArchetypes();
+            problems += CheckMascotHeadsAreOversized();
+            problems += CheckPrincessIsTheCaller();
+
+            Debug.Log(problems == 0
+                ? "[Merryland] PASS — the suits shrug off rifle rounds and the heads are far too big."
+                : $"[Merryland] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>The five Merryland archetypes exist and say what they should.</summary>
+        private static int CheckMascotArchetypes()
+        {
+            var wanted = new[]
+            {
+                ZombieKind.MascotMouse, ZombieKind.MascotDog,
+                ZombieKind.MascotBowMouse, ZombieKind.StorybookPrincess,
+                ZombieKind.BossMascot,
+            };
+
+            int problems = 0;
+
+            foreach (ZombieKind kind in wanted)
+            {
+                ZombieArchetype found = null;
+                foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+                    if (a.Kind == kind) found = a;
+
+                if (found == null)
+                {
+                    Debug.LogError($"[Merryland] No archetype for {kind}.");
+                    problems++;
+                    continue;
+                }
+
+                Debug.Log($"[Merryland] {found.Name}: {found.Health:0} health, {found.Scale:0.00}x, " +
+                          $"{found.AttackDamage:0} a hit at {found.AttackRange:0.0} m, " +
+                          $"rifle x{found.RifleDamageMultiplier:0.00}, hears x{found.HearingMultiplier:0.0}.");
+            }
+
+            // The two full suits and the parade float are the padded ones. Dilly Dog is a
+            // thinner costume and the princess is not wearing one at all, so neither should
+            // be resistant — a blanket rule here would be wrong and would also stop the
+            // player ever getting to use the rifle in this level.
+            var padded = new[] { ZombieKind.MascotMouse, ZombieKind.BossMascot };
+
+            foreach (ZombieKind kind in padded)
+            {
+                ZombieArchetype a = null;
+                foreach (ZombieArchetype candidate in ZombieArchetype.Catalogue)
+                    if (candidate.Kind == kind) a = candidate;
+
+                if (a == null) continue;
+
+                if (a.RifleDamageMultiplier >= 1f)
+                {
+                    Debug.LogError($"[Merryland] {a.Name} takes full rifle damage (x{a.RifleDamageMultiplier:0.00}). " +
+                                   "The foam is the entire reason this level exists — without it the " +
+                                   "player never has to put the rifle down.");
+                    problems++;
+                }
+            }
+
+            // And the princess must NOT be resistant, or there is nothing the rifle is for.
+            foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+            {
+                if (a.Kind != ZombieKind.StorybookPrincess) continue;
+
+                if (a.RifleDamageMultiplier < 1f)
+                {
+                    Debug.LogError($"[Merryland] The princess resists rifle rounds too (x{a.RifleDamageMultiplier:0.00}). " +
+                                   "She is not wearing a suit, and if everything in the level is " +
+                                   "rifle-proof the rifle is simply dead weight rather than a choice.");
+                    problems++;
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// A mascot head is far bigger than a head.
+        ///
+        /// Compared against an ordinary zombie's own head rather than a hard number, so this
+        /// keeps meaning the same thing if the base body is ever rescaled. Measured off real
+        /// renderer bounds, because the costume is built from half a dozen overlapping
+        /// primitives and no single one of them is "the head".
+        /// </summary>
+        private static int CheckMascotHeadsAreOversized()
+        {
+            float plain = MeasureHeadWidth(ZombieOutfit.None);
+            if (plain <= 0f)
+            {
+                Debug.LogError("[Merryland] Could not measure an ordinary zombie's head.");
+                return 1;
+            }
+
+            var suits = new[]
+            {
+                ZombieOutfit.MascotMouse, ZombieOutfit.MascotBowMouse, ZombieOutfit.MascotDog,
+            };
+
+            int problems = 0;
+
+            foreach (ZombieOutfit suit in suits)
+            {
+                float width = MeasureHeadWidth(suit);
+
+                if (width < plain * 1.7f)
+                {
+                    Debug.LogError($"[Merryland] {suit} head is {width:0.00} m against a plain head's " +
+                                   $"{plain:0.00} m — that is a person in a onesie, not a mascot.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[Merryland] {suit} head: {width:0.00} m, " +
+                              $"{width / plain:0.0}x an ordinary head.");
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>Widest span of anything parented to the Head bone.</summary>
+        private static float MeasureHeadWidth(ZombieOutfit outfit)
+        {
+            GameObject probe = ZombieFactory.Create("HeadProbe", outfit);
+
+            try
+            {
+                var rig = probe.GetComponent<ZombieRig>();
+                if (rig == null || rig.Bones == null || rig.Bones.Head == null) return 0f;
+
+                float low = float.MaxValue, high = float.MinValue;
+
+                foreach (Renderer renderer in rig.Bones.Head.GetComponentsInChildren<Renderer>())
+                {
+                    low = Mathf.Min(low, renderer.bounds.min.x);
+                    high = Mathf.Max(high, renderer.bounds.max.x);
+                }
+
+                return high <= low ? 0f : high - low;
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe);
+            }
+        }
+
+        /// <summary>She hears further than anything else, which is what makes her the threat.</summary>
+        private static int CheckPrincessIsTheCaller()
+        {
+            ZombieArchetype princess = null;
+            float loudestOther = 0f;
+            string loudestName = "nothing";
+
+            foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+            {
+                if (a.Kind == ZombieKind.StorybookPrincess) { princess = a; continue; }
+
+                if (a.HearingMultiplier > loudestOther)
+                {
+                    loudestOther = a.HearingMultiplier;
+                    loudestName = a.Name;
+                }
+            }
+
+            if (princess == null)
+            {
+                Debug.LogError("[Merryland] No princess archetype.");
+                return 1;
+            }
+
+            if (princess.HearingMultiplier <= loudestOther)
+            {
+                Debug.LogError($"[Merryland] The princess hears x{princess.HearingMultiplier:0.0} but " +
+                               $"{loudestName} hears x{loudestOther:0.0}. She is supposed to be the one " +
+                               "that finds you first and calls everything else in.");
+                return 1;
+            }
+
+            Debug.Log($"[Merryland] The princess hears x{princess.HearingMultiplier:0.0}, ahead of " +
+                      $"{loudestName} at x{loudestOther:0.0} — she is the caller.");
+            return 0;
+        }
+
         [MenuItem("Zombie House/Test Reload", false, 43)]
         public static void TestReload()
         {
@@ -3454,6 +4066,7 @@ namespace ZombieHouse.EditorTools
             {
                 ("Verify", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
                 ("School", SchoolScenePath), ("Pyramid", PyramidScenePath), ("Jungle", JungleScenePath),
+                ("Merryland", MerrylandScenePath),
             };
 
             foreach (var level in levels)
@@ -3526,6 +4139,7 @@ namespace ZombieHouse.EditorTools
                 new { Name = "School", Bed = ZombieHouse.Audio.Sfx.MusicSchool, Tension = ZombieHouse.Audio.Sfx.TensionSchool,  Seconds = 48f },
                 new { Name = "Tomb",   Bed = ZombieHouse.Audio.Sfx.MusicTomb,   Tension = ZombieHouse.Audio.Sfx.TensionTomb,    Seconds = 64f },
                 new { Name = "Jungle", Bed = ZombieHouse.Audio.Sfx.MusicJungle, Tension = ZombieHouse.Audio.Sfx.TensionJungle,  Seconds = 72f },
+                new { Name = "Merryland", Bed = ZombieHouse.Audio.Sfx.MusicPark, Tension = ZombieHouse.Audio.Sfx.TensionPark, Seconds = 60f },
             };
 
             var fingerprints = new List<KeyValuePair<string, float>>();
@@ -3600,7 +4214,7 @@ namespace ZombieHouse.EditorTools
             problems += CheckDreadPrimitives();
 
             Debug.Log(problems == 0
-                ? "[Music] PASS — six distinct beds, layers length-matched, nothing silent or crushed."
+                ? "[Music] PASS — seven distinct beds, layers length-matched, nothing silent or crushed."
                 : $"[Music] FAIL — {problems} problem(s).");
         }
 
@@ -6810,6 +7424,45 @@ namespace ZombieHouse.EditorTools
             CreateMaterial("ruinstone", new Color(0.30f, 0.31f, 0.27f), 0.10f, 0f);
 
             // The snake: banded scales with a wet sheen.
+            // ---- Merryland. Every one of these must exist as an ASSET, not just as a
+            // ProtoMaterials property: Get() silently falls back to an in-memory material
+            // when the .mat is missing, and an in-memory material does not survive being
+            // saved into a prefab. The mascots would ship magenta, exactly as the jungle
+            // creatures did.
+            CreateMaterial("mascotfur", new Color(0.16f, 0.16f, 0.19f), 0.06f, 0.00f);
+            CreateMaterial("mascotfuralt", new Color(0.20f, 0.14f, 0.17f), 0.06f, 0.00f);
+            CreateMaterial("mascotfurdog", new Color(0.44f, 0.31f, 0.16f), 0.05f, 0.00f);
+            CreateMaterial("mascotface", new Color(0.86f, 0.76f, 0.62f), 0.10f, 0.00f);
+            CreateMaterial("mascotnose", new Color(0.09f, 0.08f, 0.09f), 0.35f, 0.00f);
+            CreateMaterial("mascotgrin", new Color(0.92f, 0.90f, 0.84f), 0.28f, 0.00f);
+            CreateMaterial("mascoteye", new Color(0.94f, 0.93f, 0.90f), 0.30f, 0.00f);
+            CreateMaterial("mascotpupil", new Color(0.05f, 0.05f, 0.07f), 0.42f, 0.00f);
+            CreateMaterial("mascotbow", new Color(0.52f, 0.13f, 0.16f), 0.14f, 0.00f);
+            CreateMaterial("mascothat", new Color(0.24f, 0.34f, 0.30f), 0.08f, 0.00f);
+            CreateMaterial("mascotvest", new Color(0.30f, 0.36f, 0.48f), 0.10f, 0.00f);
+            CreateMaterial("mascotglove", new Color(0.88f, 0.87f, 0.83f), 0.09f, 0.00f);
+            CreateMaterial("mascotshoe", new Color(0.62f, 0.44f, 0.11f), 0.16f, 0.00f);
+            CreateMaterial("princesshair", new Color(0.46f, 0.31f, 0.12f), 0.16f, 0.00f);
+            CreateMaterial("princessrouge", new Color(0.60f, 0.16f, 0.20f), 0.12f, 0.00f);
+            CreateMaterial("princessgown", new Color(0.44f, 0.40f, 0.56f), 0.22f, 0.00f);
+            CreateMaterial("princessgowntorn", new Color(0.32f, 0.29f, 0.40f), 0.10f, 0.00f);
+            CreateMaterial("princesssash", new Color(0.68f, 0.60f, 0.22f), 0.30f, 0.00f);
+            CreateMaterial("midway", new Color(0.38f, 0.36f, 0.34f), 0.06f, 0.00f);
+            CreateMaterial("midwayalt", new Color(0.44f, 0.41f, 0.37f), 0.06f, 0.00f);
+            CreateMaterial("parkgrass", new Color(0.24f, 0.28f, 0.16f), 0.05f, 0.00f);
+            CreateMaterial("tentcanvas", new Color(0.80f, 0.76f, 0.68f), 0.07f, 0.00f);
+            CreateMaterial("tentstripe", new Color(0.62f, 0.20f, 0.20f), 0.07f, 0.00f);
+            CreateMaterial("carouselgilt", new Color(0.66f, 0.54f, 0.22f), 0.55f, 0.65f);
+            CreateMaterial("carouselpaint", new Color(0.72f, 0.66f, 0.58f), 0.20f, 0.00f);
+            CreateMaterial("ferrissteel", new Color(0.40f, 0.42f, 0.44f), 0.34f, 0.55f);
+            CreateMaterial("castlestone", new Color(0.62f, 0.63f, 0.70f), 0.10f, 0.00f);
+            CreateMaterial("castleroof", new Color(0.28f, 0.34f, 0.46f), 0.18f, 0.00f);
+            CreateMaterial("bunting", new Color(0.70f, 0.52f, 0.20f), 0.10f, 0.00f);
+            CreateMaterial("stallwood", new Color(0.42f, 0.30f, 0.18f), 0.08f, 0.00f);
+            CreateMaterial("stallawning", new Color(0.54f, 0.46f, 0.30f), 0.09f, 0.00f);
+            CreateMaterial("teacup", new Color(0.58f, 0.48f, 0.54f), 0.24f, 0.00f);
+            CreateMaterial("fencerail", new Color(0.30f, 0.30f, 0.33f), 0.24f, 0.40f);
+
             CreateMaterial("snakescale", new Color(0.13f, 0.20f, 0.11f), 0.62f, 0.25f);
             CreateMaterial("snakeband", new Color(0.30f, 0.24f, 0.06f), 0.58f, 0.25f);
 

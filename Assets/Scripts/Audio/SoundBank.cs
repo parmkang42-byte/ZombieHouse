@@ -28,7 +28,10 @@ namespace ZombieHouse.Audio
 
         // Appended, never inserted. Everything above keeps the index it already had, which
         // is what stops a rebuild-less scene from changing its music track.
-        ZombieRise, LightPop
+        ZombieRise, LightPop,
+
+        // Merryland. Appended, like everything else here.
+        MusicPark, TensionPark
     }
 
     /// <summary>
@@ -117,7 +120,10 @@ namespace ZombieHouse.Audio
                 { Sfx.TensionTown,    new[] { Tension(56f, 58.27f, 0.8f, rng) } },
                 { Sfx.TensionSchool,  new[] { Tension(48f, 65.41f, 1.0f, rng) } },
                 { Sfx.TensionTomb,    new[] { Tension(64f, 43.65f, 1.25f, rng) } },
-                { Sfx.TensionJungle,  new[] { Tension(72f, 48.99f, 1.15f, rng) } }
+                { Sfx.TensionJungle,  new[] { Tension(72f, 48.99f, 1.15f, rng) } },
+
+                { Sfx.MusicPark,      new[] { WaltzForNobody(rng) } },
+                { Sfx.TensionPark,    new[] { Tension(60f, 61.74f, 0.95f, rng) } }
             };
         }
 
@@ -1993,6 +1999,103 @@ namespace ZombieHouse.Audio
         /// A single plucked string, an open fifth that hangs, and the creak of something
         /// wooden moving in the heat.
         /// </summary>
+        /// <summary>
+        /// WALTZ FOR NOBODY — the park's calliope, still playing to an empty midway.
+        ///
+        /// A waltz because a waltz is what these organs played and because three-four is the
+        /// time signature of something turning: it is carousel music, and the carousel is
+        /// forty metres away with nothing on it.
+        ///
+        /// The melody is deliberately simple and deliberately in a major key. Bending it
+        /// minor would be the obvious move and it would be the wrong one — a sad tune in an
+        /// abandoned park is just sad, whereas a cheerful one is *indifferent*, and
+        /// indifference is the thing that makes a place feel like it does not need you.
+        ///
+        /// Sixty seconds, which pairs with TensionPark. They start on one dspTime tick and
+        /// loop together forever; a mismatch drifts them apart inside a minute.
+        /// </summary>
+        private static AudioClip WaltzForNobody(System.Random rng)
+        {
+            const float length = 60f;
+            var mix = Buffer(length);
+
+            // The tune. G major, and it goes nowhere in particular -- a fairground organ
+            // plays a phrase and then plays it again, which is how you know it is a machine.
+            float[] melody = { 392.00f, 493.88f, 587.33f, 493.88f, 392.00f, 329.63f,
+                               440.00f, 523.25f, 659.25f, 523.25f, 440.00f, 392.00f };
+
+            const float beat = 0.42f;          // brisk three-four
+            int step = 0;
+            float t = 0f;
+
+            while (t < length - 2f)
+            {
+                // Every eighth bar the mechanism sticks and the melody stops dead. The
+                // silence is the loudest thing in the piece.
+                bool stuck = (step / 3) % 8 == 7;
+
+                if (!stuck)
+                {
+                    float hz = melody[step % melody.Length];
+                    bool downbeat = step % 3 == 0;
+
+                    // Two ranks, a few cents apart. This is the entire character of the
+                    // sound: one rank is a tone, two ranks slightly out is an ORGAN.
+                    var pipe = Buffer(beat * 1.6f);
+                    AddSaw(pipe, hz, hz, downbeat ? 0.34f : 0.24f);
+                    AddSaw(pipe, hz * 1.006f, hz * 1.006f, downbeat ? 0.30f : 0.20f);
+                    AddSine(pipe, hz * 2f, hz * 2f, 0.10f);
+
+                    // A pipe speaks with a chiff and then holds; it does not fade in.
+                    ApplyEnvelope(pipe, 0.012f, beat * 1.1f);
+                    LowPass(pipe, 2600f);
+
+                    DelayInto(mix, pipe, t, 1f);
+                }
+
+                // The oom-pah underneath, which keeps going even through the stuck bars —
+                // the bellows do not care that the melody has stopped.
+                if (step % 3 == 0)
+                {
+                    var bass = Buffer(beat * 1.2f);
+                    AddSine(bass, 98.00f, 97.4f, 0.30f);
+                    AddSaw(bass, 98.00f, 97.4f, 0.10f);
+                    ApplyEnvelope(bass, 0.010f, beat * 0.9f);
+                    LowPass(bass, 700f);
+                    DelayInto(mix, bass, t, 1f);
+                }
+
+                t += beat;
+                step++;
+            }
+
+            // Wow and flutter over the whole thing. A wandering read head is the difference
+            // between "a synthesiser played a waltz" and "a machine is playing a waltz".
+            ApplyWarble(mix, 22f, 0.34f);
+
+            // The room: an empty park at night is mostly air, so the organ arrives with a
+            // long dull tail and no early reflections worth speaking of.
+            AddEcho(mix, 0.31f, 0.26f, 4);
+            LowPass(mix, 3200f);
+
+            // And underneath it all, the sound of the place itself: wind through a chain
+            // link fence and something metal a long way off.
+            var wind = Buffer(length);
+            AddNoise(wind, 0.30f, rng);
+            SweepLowPass(wind, 420f, 180f);
+            ApplyWarble(wind, 60f, 0.06f);
+            Mix(mix, wind, 0.5f);
+
+            // A root that walks and never comes home. G - E - C - A: it keeps sounding
+            // like it is about to resolve to G and never does, which is the same trick every
+            // other bed in this game uses and the reason none of them wear out.
+            AddDroneProgression(mix, 49.00f, new[] { 0, -3, -7, -11 }, length, 0.30f);
+
+            MakeSeamless(mix, 2.2f);
+            Normalize(mix, 0.52f);
+            return ToClip("WaltzForNobody", mix, true);
+        }
+
         private static AudioClip DustAndBone(System.Random rng)
         {
             const float length = 56f;

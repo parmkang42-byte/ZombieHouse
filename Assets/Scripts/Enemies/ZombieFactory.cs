@@ -30,7 +30,14 @@ namespace ZombieHouse.Enemies
     /// ZombieRig, and delete the primitive meshes. Nothing reads the meshes directly.
     /// </summary>
     /// <summary>What this walker was wearing when it stopped being a person.</summary>
-    public enum ZombieOutfit { None, Cowboy, Teacher, Kid, Janitor, Mummy }
+    public enum ZombieOutfit
+    {
+        None, Cowboy, Teacher, Kid, Janitor, Mummy,
+
+        // Merryland. The first three are suits with somebody inside; the princess is
+        // a walkaround performer, which is worse.
+        MascotMouse, MascotDog, MascotBowMouse, Princess
+    }
 
     public static class ZombieFactory
     {
@@ -88,6 +95,10 @@ namespace ZombieHouse.Enemies
                 case ZombieOutfit.Kid: DressAsKid(bones); break;
                 case ZombieOutfit.Janitor: DressAsJanitor(bones); break;
                 case ZombieOutfit.Mummy: DressAsMummy(bones); break;
+                case ZombieOutfit.MascotMouse: DressAsMascotMouse(bones, bow: false); break;
+                case ZombieOutfit.MascotBowMouse: DressAsMascotMouse(bones, bow: true); break;
+                case ZombieOutfit.MascotDog: DressAsMascotDog(bones); break;
+                case ZombieOutfit.Princess: DressAsPrincess(bones); break;
             }
 
             var rigHolder = root.AddComponent<ZombieRig>();
@@ -439,6 +450,262 @@ namespace ZombieHouse.Enemies
         /// **alternating tone** — clean linen against filthy linen, band by band. A single
         /// colour at this scale just looks like a bodysuit.
         /// </summary>
+        /// <summary>
+        /// The park's mouse, in two flavours: the plain suit and the one with the bow.
+        ///
+        /// One method for both because they are the same costume off the same production
+        /// line, which is exactly what makes a pair of them walking together unsettling —
+        /// you are not looking at two monsters, you are looking at two of the same monster.
+        ///
+        /// The ears are the whole silhouette. Two flat discs, always facing the same way as
+        /// the face, mounted high and wide: it is the most recognisable head shape anyone
+        /// has ever drawn, and putting it on something shambling out of the dark does more
+        /// than any amount of blood would.
+        /// </summary>
+        private static void DressAsMascotMouse(ZombieBones bones, bool bow)
+        {
+            Material fur = bow ? ProtoMaterials.MascotFurAlt : ProtoMaterials.MascotFur;
+
+            if (bones.Head != null)
+            {
+                // The head, and it is enormous — a costume head swallows the wearer's
+                // shoulders. Parented to Head so it lags and overshoots on every turn.
+                CreatePart(bones.Head, "MascotHead", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.10f, 0.02f), new Vector3(0.52f, 0.50f, 0.50f),
+                    fur, null, 0f, false);
+
+                CreatePart(bones.Head, "MascotMuzzle", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.02f, 0.20f), new Vector3(0.30f, 0.22f, 0.24f),
+                    ProtoMaterials.MascotFace, null, 0f, false);
+
+                CreatePart(bones.Head, "MascotNose", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.06f, 0.31f), new Vector3(0.10f, 0.09f, 0.09f),
+                    ProtoMaterials.MascotNose, null, 0f, false);
+
+                // The grin. A flat wedge that never changes, because it cannot.
+                CreatePart(bones.Head, "MascotGrin", PrimitiveType.Cube,
+                    new Vector3(0f, -0.04f, 0.28f), new Vector3(0.20f, 0.04f, 0.06f),
+                    ProtoMaterials.MascotGrin, null, 0f, false);
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    CreatePart(bones.Head, "MascotEar_" + side, PrimitiveType.Cylinder,
+                        new Vector3(0.24f * side, 0.36f, -0.02f), new Vector3(0.26f, 0.03f, 0.26f),
+                        fur, null, 0f, false).transform.localRotation =
+                            Quaternion.Euler(90f, 0f, 0f);
+
+                    // Eyes: two flat white ovals with a pupil that is always looking at you,
+                    // because it is painted on and cannot look anywhere else.
+                    CreatePart(bones.Head, "MascotEye_" + side, PrimitiveType.Sphere,
+                        new Vector3(0.10f * side, 0.16f, 0.20f), new Vector3(0.13f, 0.17f, 0.06f),
+                        ProtoMaterials.MascotEye, null, 0f, false);
+
+                    CreatePart(bones.Head, "MascotPupil_" + side, PrimitiveType.Sphere,
+                        new Vector3(0.10f * side, 0.14f, 0.235f), new Vector3(0.06f, 0.09f, 0.04f),
+                        ProtoMaterials.MascotPupil, null, 0f, false);
+                }
+
+                if (bow)
+                {
+                    for (int side = -1; side <= 1; side += 2)
+                    {
+                        CreatePart(bones.Head, "BowLobe_" + side, PrimitiveType.Sphere,
+                            new Vector3(0.11f * side, 0.40f, -0.06f), new Vector3(0.16f, 0.13f, 0.08f),
+                            ProtoMaterials.MascotBow, null, 0f, false);
+                    }
+
+                    CreatePart(bones.Head, "BowKnot", PrimitiveType.Sphere,
+                        new Vector3(0f, 0.40f, -0.06f), new Vector3(0.07f, 0.07f, 0.07f),
+                        ProtoMaterials.MascotBow, null, 0f, false);
+                }
+            }
+
+            if (bones.Spine != null)
+            {
+                CreatePart(bones.Spine, "MascotBody", PrimitiveType.Capsule,
+                    new Vector3(0f, 0.15f, 0f), new Vector3(0.42f, 0.26f, 0.36f),
+                    fur, null, 0f, false);
+
+                CreatePart(bones.Spine, "MascotBelly", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.06f, 0.10f), new Vector3(0.34f, 0.28f, 0.24f),
+                    ProtoMaterials.MascotFace, null, 0f, false);
+
+                if (bow)
+                {
+                    CreatePart(bones.Spine, "PolkaSkirt", PrimitiveType.Cylinder,
+                        new Vector3(0f, -0.06f, 0f), new Vector3(0.46f, 0.14f, 0.46f),
+                        ProtoMaterials.MascotBow, null, 0f, false);
+                }
+                else
+                {
+                    CreatePart(bones.Spine, "MascotShorts", PrimitiveType.Cube,
+                        new Vector3(0f, -0.04f, 0f), new Vector3(0.36f, 0.14f, 0.30f),
+                        ProtoMaterials.MascotBow, null, 0f, false);
+                }
+            }
+
+            DressMascotExtremities(bones, fur);
+        }
+
+        /// <summary>
+        /// The tall one. Same production line, longer everything.
+        ///
+        /// The ears hang rather than stand, which is the only real difference in the head
+        /// and completely changes what it reads as — one silhouette is alert and the other
+        /// is mournful, from two cylinders rotated ninety degrees apart.
+        /// </summary>
+        private static void DressAsMascotDog(ZombieBones bones)
+        {
+            if (bones.Head != null)
+            {
+                CreatePart(bones.Head, "DogHead", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.11f, 0.02f), new Vector3(0.46f, 0.50f, 0.46f),
+                    ProtoMaterials.MascotFurDog, null, 0f, false);
+
+                CreatePart(bones.Head, "DogMuzzle", PrimitiveType.Capsule,
+                    new Vector3(0f, -0.02f, 0.24f), new Vector3(0.18f, 0.16f, 0.18f),
+                    ProtoMaterials.MascotFace, null, 0f, false).transform.localRotation =
+                        Quaternion.Euler(90f, 0f, 0f);
+
+                CreatePart(bones.Head, "DogNose", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.00f, 0.38f), new Vector3(0.11f, 0.09f, 0.09f),
+                    ProtoMaterials.MascotPupil, null, 0f, false);
+
+                CreatePart(bones.Head, "DogGrin", PrimitiveType.Cube,
+                    new Vector3(0f, -0.10f, 0.30f), new Vector3(0.16f, 0.035f, 0.08f),
+                    ProtoMaterials.MascotGrin, null, 0f, false);
+
+                // A crumpled felt hat, because the one thing worse than a mascot is a
+                // mascot still wearing the bit of costume that was meant to be funny.
+                CreatePart(bones.Head, "DogHat", PrimitiveType.Cylinder,
+                    new Vector3(0f, 0.36f, -0.02f), new Vector3(0.30f, 0.09f, 0.30f),
+                    ProtoMaterials.MascotHat, null, 0f, false);
+
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    // Hanging ears: long capsules down the sides of the head.
+                    CreatePart(bones.Head, "DogEar_" + side, PrimitiveType.Capsule,
+                        new Vector3(0.25f * side, 0.02f, -0.02f), new Vector3(0.11f, 0.20f, 0.09f),
+                        ProtoMaterials.MascotFurDog, null, 0f, false);
+
+                    CreatePart(bones.Head, "DogEye_" + side, PrimitiveType.Sphere,
+                        new Vector3(0.09f * side, 0.20f, 0.19f), new Vector3(0.12f, 0.16f, 0.06f),
+                        ProtoMaterials.MascotEye, null, 0f, false);
+
+                    CreatePart(bones.Head, "DogPupil_" + side, PrimitiveType.Sphere,
+                        new Vector3(0.09f * side, 0.18f, 0.22f), new Vector3(0.05f, 0.08f, 0.04f),
+                        ProtoMaterials.MascotPupil, null, 0f, false);
+                }
+            }
+
+            if (bones.Spine != null)
+            {
+                CreatePart(bones.Spine, "DogVest", PrimitiveType.Capsule,
+                    new Vector3(0f, 0.16f, 0f), new Vector3(0.36f, 0.28f, 0.32f),
+                    ProtoMaterials.MascotVest, null, 0f, false);
+
+                CreatePart(bones.Spine, "DogCollar", PrimitiveType.Cylinder,
+                    new Vector3(0f, 0.34f, 0f), new Vector3(0.26f, 0.03f, 0.26f),
+                    ProtoMaterials.MascotBow, null, 0f, false);
+            }
+
+            DressMascotExtremities(bones, ProtoMaterials.MascotFurDog);
+        }
+
+        /// <summary>
+        /// The walkaround princess — no costume head, which is the point.
+        ///
+        /// Every other thing in this level is hiding behind moulded foam. She is not, and
+        /// the greasepaint has run. A face you can almost read is worse than a face that is
+        /// obviously a mask, because you keep trying to read it.
+        /// </summary>
+        private static void DressAsPrincess(ZombieBones bones)
+        {
+            if (bones.Head != null)
+            {
+                CreatePart(bones.Head, "PrincessWig", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.07f, -0.02f), new Vector3(0.30f, 0.30f, 0.30f),
+                    ProtoMaterials.PrincessHair, null, 0f, false);
+
+                CreatePart(bones.Head, "Tiara", PrimitiveType.Cube,
+                    new Vector3(0f, 0.22f, 0.04f), new Vector3(0.20f, 0.05f, 0.16f),
+                    ProtoMaterials.Gold, null, 0f, false);
+
+                // The paint. Two high spots of rouge and a painted smile that is a little
+                // wider than her mouth actually is.
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    CreatePart(bones.Head, "Rouge_" + side, PrimitiveType.Sphere,
+                        new Vector3(0.08f * side, -0.01f, 0.13f), new Vector3(0.09f, 0.07f, 0.03f),
+                        ProtoMaterials.PrincessRouge, null, 0f, false);
+                }
+
+                CreatePart(bones.Head, "PaintedSmile", PrimitiveType.Cube,
+                    new Vector3(0f, -0.08f, 0.14f), new Vector3(0.17f, 0.025f, 0.03f),
+                    ProtoMaterials.PrincessRouge, null, 0f, false);
+            }
+
+            if (bones.Spine != null)
+            {
+                CreatePart(bones.Spine, "Bodice", PrimitiveType.Capsule,
+                    new Vector3(0f, 0.16f, 0f), new Vector3(0.30f, 0.22f, 0.24f),
+                    ProtoMaterials.PrincessGown, null, 0f, false);
+
+                CreatePart(bones.Spine, "Sash", PrimitiveType.Cube,
+                    new Vector3(0f, 0.10f, 0.10f), new Vector3(0.30f, 0.07f, 0.06f),
+                    ProtoMaterials.PrincessSash, null, 0f, false);
+            }
+
+            if (bones.Pelvis != null)
+            {
+                // The skirt, wide and dragging. No collider on it: it is much larger than
+                // the body and a collider here would stop rounds meant for whatever is
+                // standing behind her.
+                CreatePart(bones.Pelvis, "Gown", PrimitiveType.Cylinder,
+                    new Vector3(0f, -0.22f, 0f), new Vector3(0.66f, 0.34f, 0.62f),
+                    ProtoMaterials.PrincessGown, null, 0f, false);
+
+                CreatePart(bones.Pelvis, "GownHem", PrimitiveType.Cylinder,
+                    new Vector3(0f, -0.52f, 0f), new Vector3(0.72f, 0.04f, 0.68f),
+                    ProtoMaterials.PrincessGownTorn, null, 0f, false);
+            }
+        }
+
+        /// <summary>
+        /// The gloves and the shoes, which every suit on the line shares.
+        ///
+        /// Four-fingered white gloves and boots two sizes too big are the parts of a mascot
+        /// costume nobody can un-see, and they are also the parts that read at distance in
+        /// the dark — a pair of white blobs swinging out of an unlit midway is the whole
+        /// jump scare, and the rest of the suit only has to arrive afterwards.
+        /// </summary>
+        private static void DressMascotExtremities(ZombieBones bones, Material fur)
+        {
+            Transform[] hands = { bones.ElbowLeft, bones.ElbowRight };
+            foreach (Transform hand in hands)
+            {
+                if (hand == null) continue;
+
+                CreatePart(hand, "MascotGlove", PrimitiveType.Sphere,
+                    new Vector3(0f, -0.20f, 0f), new Vector3(0.20f, 0.19f, 0.17f),
+                    ProtoMaterials.MascotGlove, null, 0f, false);
+
+                CreatePart(hand, "MascotSleeve", PrimitiveType.Capsule,
+                    new Vector3(0f, -0.06f, 0f), new Vector3(0.15f, 0.12f, 0.15f),
+                    fur, null, 0f, false);
+            }
+
+            Transform[] feet = { bones.KneeLeft, bones.KneeRight };
+            foreach (Transform foot in feet)
+            {
+                if (foot == null) continue;
+
+                CreatePart(foot, "MascotShoe", PrimitiveType.Sphere,
+                    new Vector3(0f, -0.34f, 0.07f), new Vector3(0.22f, 0.14f, 0.32f),
+                    ProtoMaterials.MascotShoe, null, 0f, false);
+            }
+        }
+
         private static void DressAsMummy(ZombieBones bones)
         {
             WrapLimb(bones.Spine, "Torso", 5, 0.34f, 0.055f, 0.14f);

@@ -205,6 +205,79 @@ namespace ZombieHouse.Level
         public static Material Moss => Get("moss", new Color(0.13f, 0.24f, 0.12f), 0.05f);
         public static Material RuinStone => Get("ruinstone", new Color(0.30f, 0.31f, 0.27f), 0.10f);
 
+        // ---- Merryland ----------------------------------------------------
+        // Sun-bleached rather than grimy. The park closed in the eighties and nobody
+        // boarded it up; forty summers took the red out of everything and left the
+        // shapes intact, which is far worse than rot. Cheerful colours gone chalky
+        // read as abandoned in a way that dirt never does.
+
+        /// Mister Squeak: black plush gone grey
+        public static Material MascotFur => Get("mascotfur", new Color(0.16f, 0.16f, 0.19f), 0.06f, 0.00f);
+        /// Missus Squeak, a shade warmer
+        public static Material MascotFurAlt => Get("mascotfuralt", new Color(0.20f, 0.14f, 0.17f), 0.06f, 0.00f);
+        /// Dilly Dog: tan, matted
+        public static Material MascotFurDog => Get("mascotfurdog", new Color(0.44f, 0.31f, 0.16f), 0.05f, 0.00f);
+        /// the cream muzzle and belly patch
+        public static Material MascotFace => Get("mascotface", new Color(0.86f, 0.76f, 0.62f), 0.10f, 0.00f);
+        /// a moulded plastic nose
+        public static Material MascotNose => Get("mascotnose", new Color(0.09f, 0.08f, 0.09f), 0.35f, 0.00f);
+        /// the painted smile
+        public static Material MascotGrin => Get("mascotgrin", new Color(0.92f, 0.90f, 0.84f), 0.28f, 0.00f);
+        /// the white of a painted eye
+        public static Material MascotEye => Get("mascoteye", new Color(0.94f, 0.93f, 0.90f), 0.30f, 0.00f);
+        /// and its pupil, always aimed at you
+        public static Material MascotPupil => Get("mascotpupil", new Color(0.05f, 0.05f, 0.07f), 0.42f, 0.00f);
+        /// bow, shorts, collar: faded circus red
+        public static Material MascotBow => Get("mascotbow", new Color(0.52f, 0.13f, 0.16f), 0.14f, 0.00f);
+        /// Dilly's crumpled felt hat
+        public static Material MascotHat => Get("mascothat", new Color(0.24f, 0.34f, 0.30f), 0.08f, 0.00f);
+        /// Dilly's waistcoat
+        public static Material MascotVest => Get("mascotvest", new Color(0.30f, 0.36f, 0.48f), 0.10f, 0.00f);
+        /// four-fingered gloves, greyed
+        public static Material MascotGlove => Get("mascotglove", new Color(0.88f, 0.87f, 0.83f), 0.09f, 0.00f);
+        /// boots two sizes too big
+        public static Material MascotShoe => Get("mascotshoe", new Color(0.62f, 0.44f, 0.11f), 0.16f, 0.00f);
+        /// a nylon wig
+        public static Material PrincessHair => Get("princesshair", new Color(0.46f, 0.31f, 0.12f), 0.16f, 0.00f);
+        /// greasepaint, run
+        public static Material PrincessRouge => Get("princessrouge", new Color(0.60f, 0.16f, 0.20f), 0.12f, 0.00f);
+        /// satin that was lilac once
+        public static Material PrincessGown => Get("princessgown", new Color(0.44f, 0.40f, 0.56f), 0.22f, 0.00f);
+        /// the hem, dragged through forty years
+        public static Material PrincessGownTorn => Get("princessgowntorn", new Color(0.32f, 0.29f, 0.40f), 0.10f, 0.00f);
+        /// a pageant sash
+        public static Material PrincessSash => Get("princesssash", new Color(0.68f, 0.60f, 0.22f), 0.30f, 0.00f);
+        /// cracked paving down the middle of it
+        public static Material Midway => Get("midway", new Color(0.38f, 0.36f, 0.34f), 0.06f, 0.00f);
+        /// the paler slabs, for a pattern
+        public static Material MidwayAlt => Get("midwayalt", new Color(0.44f, 0.41f, 0.37f), 0.06f, 0.00f);
+        /// lawns nobody has cut
+        public static Material ParkGrass => Get("parkgrass", new Color(0.24f, 0.28f, 0.16f), 0.05f, 0.00f);
+        /// big top canvas, sun-bleached
+        public static Material TentCanvas => Get("tentcanvas", new Color(0.80f, 0.76f, 0.68f), 0.07f, 0.00f);
+        /// and its red stripes
+        public static Material TentStripe => Get("tentstripe", new Color(0.62f, 0.20f, 0.20f), 0.07f, 0.00f);
+        /// carousel brass, still bright in places
+        public static Material CarouselGilt => Get("carouselgilt", new Color(0.66f, 0.54f, 0.22f), 0.55f, 0.65f);
+        /// the painted rounding boards
+        public static Material CarouselPaint => Get("carouselpaint", new Color(0.72f, 0.66f, 0.58f), 0.20f, 0.00f);
+        /// the wheel, rusting at the joints
+        public static Material FerrisSteel => Get("ferrissteel", new Color(0.40f, 0.42f, 0.44f), 0.34f, 0.55f);
+        /// the castle, which is painted plywood
+        public static Material CastleStone => Get("castlestone", new Color(0.62f, 0.63f, 0.70f), 0.10f, 0.00f);
+        /// its turret cones
+        public static Material CastleRoof => Get("castleroof", new Color(0.28f, 0.34f, 0.46f), 0.18f, 0.00f);
+        /// pennants, most of them gone
+        public static Material Bunting => Get("bunting", new Color(0.70f, 0.52f, 0.20f), 0.10f, 0.00f);
+        /// the games stalls
+        public static Material StallWood => Get("stallwood", new Color(0.42f, 0.30f, 0.18f), 0.08f, 0.00f);
+        /// their striped awnings
+        public static Material StallAwning => Get("stallawning", new Color(0.54f, 0.46f, 0.30f), 0.09f, 0.00f);
+        /// the teacups, chipped
+        public static Material Teacup => Get("teacup", new Color(0.58f, 0.48f, 0.54f), 0.24f, 0.00f);
+        /// the perimeter fence
+        public static Material FenceRail => Get("fencerail", new Color(0.30f, 0.30f, 0.33f), 0.24f, 0.40f);
+
         /// The snake: banded scales with a wet sheen, and a flat unlit-looking eye.
         public static Material SnakeScale => Get("snakescale", new Color(0.13f, 0.20f, 0.11f), 0.62f, 0.25f);
         public static Material SnakeBand => Get("snakeband", new Color(0.30f, 0.24f, 0.06f), 0.58f, 0.25f);

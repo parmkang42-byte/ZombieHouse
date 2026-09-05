@@ -33,6 +33,16 @@ collider). `PropLibrary.Overlay` adds a collider-free child and hides the boxes 
 Use Overlay when the prop is several boxes, or when the mesh is bigger than the box carrying
 collision. A missing prop mesh is a deliberate no-op that leaves the boxes visible.
 
+**Only ever append to the `Sfx` enum — and to `ZombieKind`.** `LevelDirector.bossKind` and
+`ZombieProfile.kind` are stored in scenes and prefabs as `enumValueIndex` too, so inserting a
+creature renumbers every kind after it and silently changes which boss a level spawns.
+
+**A new level must be added to the cross-level test lists**, or it is simply skipped and its
+checks pass by not running. There are three: the level table in `Test Boss`, the one in
+`Test Safe Start`, and the bed table in `Test Music`. `Test Music`'s summary line names a
+count ("seven distinct beds") — update it, because a stale count is the tell that a level was
+added to the enum and not to the table.
+
 **Only ever append to the `Sfx` enum.** `GameAudio.musicTrack` is stored in a scene as an
 `enumValueIndex`, so removing or inserting a member silently changes which music bed an
 unrebuilt level plays. Rebuild all six levels after any `Sfx` edit.
@@ -56,6 +66,7 @@ you intended to move them.
 | school | 1487 | 683 |
 | pyramid | 2265 | 1009 |
 | jungle | 12838 | 5732 |
+| merryland | 1289 | 565 |
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
@@ -102,11 +113,12 @@ Pixel and GPU tests need `-batchmode` **without** `-nographics`.
 
 ### Methods worth knowing
 
-`BuildLevel1Automated` … `BuildLevel6Automated` rebuild a level's scene.
-`VerifyLevel`, `VerifyForest`, `VerifyTown`, `VerifySchool`, `VerifyPyramid`, `VerifyJungle`
+`BuildLevel1Automated` … `BuildLevel7Automated` rebuild a level's scene.
+`VerifyLevel`, `VerifyForest`, `VerifyTown`, `VerifySchool`, `VerifyPyramid`, `VerifyJungle`,
+`VerifyMerryland`
 bake the NavMesh and prove every spawn and the exit are reachable.
 
-Tests: `TestProps`, `TestBoss`, `TestDread`, `TestSafeStart`, `TestMusic`, `TestGatling`,
+Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
 `TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`. All print PASS/FAIL.
 
