@@ -177,6 +177,8 @@ namespace ZombieHouse.Audio
         /// </summary>
         private void Update()
         {
+            TickSwitch(Time.unscaledDeltaTime);
+
             if (_tensionSource == null) return;
 
             float target = ThreatMeter.Level;
@@ -190,6 +192,90 @@ namespace ZombieHouse.Audio
 
         /// <summary>Where the tension layer currently sits, 0 to 1. For tests and the HUD.</summary>
         public static float Tension => Instance != null ? Instance._tension : 0f;
+
+        /// <summary>Which bed is playing. Read by the test, and by anything wanting to restore it.</summary>
+        public static Sfx CurrentTrack => Instance != null ? Instance.musicTrack : Sfx.Music;
+
+        /// <summary>
+        /// Swaps the bed for a different one, over a crossfade.
+        ///
+        /// Used by <see cref="ZombieHouse.Enemies.LevelBoss"/> when the boss wakes, and again
+        /// when it dies. A hard cut is the obvious implementation and it is wrong: it reads
+        /// as a bug or a scene change, whereas a second of one bed dying under another reads
+        /// as something arriving.
+        ///
+        /// Safe to call with the track already playing — it returns immediately rather than
+        /// restarting, which matters because Engage() can be reached from more than one path.
+        /// </summary>
+        public static void SwitchMusic(Sfx bed, Sfx tension, float fadeSeconds = 1.4f)
+        {
+            if (Instance == null) return;
+            Instance.BeginSwitch(bed, tension, fadeSeconds);
+        }
+
+        private Sfx _pendingBed;
+        private Sfx _pendingTension;
+        private float _switchFade;
+        private float _switchProgress = -1f;
+        private AudioSource _outgoing;
+
+        private void BeginSwitch(Sfx bed, Sfx tension, float fadeSeconds)
+        {
+            if (musicTrack == bed && _switchProgress < 0f) return;
+
+            AudioClip clip = Clip(bed);
+            if (clip == null) return;
+
+            // The bed that is leaving keeps playing on its own source while it fades, so the
+            // two genuinely overlap. Reusing one source and swapping its clip would be a cut
+            // with extra steps.
+            _outgoing = _musicSource;
+
+            var go = new GameObject("Music");
+            go.transform.SetParent(transform, false);
+
+            _musicSource = go.AddComponent<AudioSource>();
+            _musicSource.clip = clip;
+            _musicSource.loop = true;
+            _musicSource.spatialBlend = 0f;
+            _musicSource.volume = 0f;
+            _musicSource.Play();
+
+            AudioClip layer = Clip(tension);
+            if (layer != null && _tensionSource != null)
+            {
+                _tensionSource.Stop();
+                _tensionSource.clip = layer;
+                _tensionSource.volume = 0f;
+                _tensionSource.Play();
+            }
+
+            musicTrack = bed;
+            tensionTrack = tension;
+
+            _pendingBed = bed;
+            _pendingTension = tension;
+            _switchFade = Mathf.Max(0.05f, fadeSeconds);
+            _switchProgress = 0f;
+        }
+
+        /// <summary>Drives a crossfade in progress. Called from Update.</summary>
+        private void TickSwitch(float deltaTime)
+        {
+            if (_switchProgress < 0f) return;
+
+            _switchProgress = Mathf.Min(1f, _switchProgress + deltaTime / _switchFade);
+
+            float full = musicVolume * masterVolume;
+            if (_musicSource != null) _musicSource.volume = _switchProgress * full;
+            if (_outgoing != null) _outgoing.volume = (1f - _switchProgress) * full;
+
+            if (_switchProgress < 1f) return;
+
+            if (_outgoing != null) Destroy(_outgoing.gameObject);
+            _outgoing = null;
+            _switchProgress = -1f;
+        }
 
         public static void SetMusicVolume(float volume)
         {

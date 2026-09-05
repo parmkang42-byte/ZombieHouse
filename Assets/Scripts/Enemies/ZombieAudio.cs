@@ -57,11 +57,14 @@ namespace ZombieHouse.Enemies
         private static float _budgetWindowEnds;
         private static int _budgetSpent;
 
+        private ZombieProfile _profile;
+
         private void Awake()
         {
             _ai = GetComponent<ZombieAI>();
             _health = GetComponent<ZombieHealth>();
             _visuals = GetComponent<ZombieVisuals>();
+            _profile = GetComponent<ZombieProfile>();
 
             _personalPitch = 1f + Random.Range(-pitchSpread, pitchSpread);
 
@@ -121,9 +124,48 @@ namespace ZombieHouse.Enemies
             _nextGroanTime = Time.time + Random.Range(range.x, range.y);
         }
 
+        /// <summary>
+        /// Swaps the standard zombie voice for this creature's own, where it has one.
+        ///
+        /// Routed on the archetype rather than on a flag per prefab, so a mascot spawned by
+        /// any path sounds right and nothing has to remember to set anything. Creatures with
+        /// no entry here fall through to the ordinary voice, which is every zombie in the
+        /// first six levels.
+        /// </summary>
+        private Sfx VoiceFor(Sfx standard)
+        {
+            if (_profile == null || _profile.Archetype == null) return standard;
+
+            switch (_profile.Archetype.Kind)
+            {
+                case ZombieKind.MascotMouse:
+                case ZombieKind.MascotDog:
+                case ZombieKind.BossMascot:
+                    // Every vocalisation is the same buried groan. A suit cannot shout, and
+                    // it certainly cannot make a different noise when it is angry.
+                    return Sfx.MascotGroan;
+
+                case ZombieKind.MascotBowMouse:
+                    // The squeaker instead — a toy, not a voice, which is worse.
+                    return Sfx.MascotSqueak;
+
+                case ZombieKind.StorybookPrincess:
+                    // Only when she is calling. Her hurt and death noises stay human, and
+                    // the contrast is the point: she performs at you and then she does not.
+                    return standard == Sfx.ZombieAlert || standard == Sfx.ZombieIdle
+                        ? Sfx.PrincessCall
+                        : standard;
+            }
+
+            return standard;
+        }
+
         private void PlayVoice(Sfx sfx, float volumeScale = 1f)
         {
-            AudioClip clip = GameAudio.Get(sfx);
+            // Substituted here rather than at each of the five call sites, so a creature
+            // with its own voice cannot leak the standard one through a path somebody
+            // forgot to update.
+            AudioClip clip = GameAudio.Get(VoiceFor(sfx));
             if (clip == null || _voice == null) return;
 
             _voice.pitch = _personalPitch + Random.Range(-0.05f, 0.05f);

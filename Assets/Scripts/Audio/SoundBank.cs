@@ -31,7 +31,15 @@ namespace ZombieHouse.Audio
         ZombieRise, LightPop,
 
         // Merryland. Appended, like everything else here.
-        MusicPark, TensionPark
+        MusicPark, TensionPark,
+
+        // One boss bed shared by all seven levels. Deliberately not seven of them: the boss
+        // fight is the one moment the game stops being about where you are.
+        MusicBoss, TensionBoss,
+
+        // Merryland's voices. The suits are the ordinary groan heard through foam; the
+        // squeak is the toy in the paw; the princess is not muffled at all.
+        MascotGroan, MascotSqueak, PrincessCall
     }
 
     /// <summary>
@@ -123,7 +131,14 @@ namespace ZombieHouse.Audio
                 { Sfx.TensionJungle,  new[] { Tension(72f, 48.99f, 1.15f, rng) } },
 
                 { Sfx.MusicPark,      new[] { WaltzForNobody(rng) } },
-                { Sfx.TensionPark,    new[] { Tension(60f, 61.74f, 0.95f, rng) } }
+                { Sfx.TensionPark,    new[] { Tension(60f, 61.74f, 0.95f, rng) } },
+
+                { Sfx.MusicBoss,      new[] { SomethingEnormous(rng) } },
+                { Sfx.TensionBoss,    new[] { Tension(32f, 36.71f, 1.6f, rng) } },
+
+                { Sfx.MascotGroan,    Many(3, i => MascotGroan(rng, i)) },
+                { Sfx.MascotSqueak,   Many(2, i => MascotSqueak(rng, i)) },
+                { Sfx.PrincessCall,   Many(2, i => PrincessCall(rng, i)) }
             };
         }
 
@@ -2014,6 +2029,203 @@ namespace ZombieHouse.Audio
         /// Sixty seconds, which pairs with TensionPark. They start on one dspTime tick and
         /// loop together forever; a mismatch drifts them apart inside a minute.
         /// </summary>
+        /// <summary>
+        /// SOMETHING ENORMOUS — the bed that takes over when a boss wakes up.
+        ///
+        /// Shared by all seven levels, and that is the point rather than a saving. Every
+        /// other bed in this game is about a *place*; this one is about a thing, and having
+        /// it be the same thing everywhere is what makes it read as a category of event.
+        /// The player learns this sound once and then knows, in the dark, in a level they
+        /// have never played, exactly what has just happened.
+        ///
+        /// Built from three ideas and no melody at all:
+        ///
+        ///   * A pulse at roughly a running heart rate, which is the one tempo nobody has to
+        ///     be taught. It does not speed up — the fight is long and an accelerating pulse
+        ///     would either arrive too early or lie.
+        ///   * A low brass-ish swell on the two and the four, deliberately a semitone apart
+        ///     from itself so it beats against its own harmonics.
+        ///   * Nothing in the middle of the spectrum, which is where the player's gunfire
+        ///     lives. A boss bed that fights the weapons for the same frequencies makes the
+        ///     shooting feel weak, and the shooting is the part that has to feel good.
+        ///
+        /// 32 seconds, which is half the longest level bed — short enough to feel insistent,
+        /// and it pairs with TensionBoss at the same length.
+        /// </summary>
+        /// <summary>
+        /// Somebody groaning inside a foam head.
+        ///
+        /// Built as a voice and then buried, in that order, because that is the physical
+        /// truth of it: there is a person in there and the costume is between you and them.
+        /// A low-pass at 900 Hz takes the intelligibility out, a resonant peak around 300 Hz
+        /// puts back the boxiness of a sealed cavity, and the whole thing is quieter than an
+        /// ordinary zombie — which does more work than any of it, because a muffled sound
+        /// makes the listener lean in.
+        /// </summary>
+        private static AudioClip MascotGroan(System.Random rng, int variant)
+        {
+            var data = Buffer(1.5f);
+
+            // The voice underneath. Deliberately the same recipe shape as an ordinary
+            // zombie: it has to be recognisably a person before it is muffled.
+            AddSaw(data, 96f + variant * 11f, 74f + variant * 7f, 0.55f);
+            AddNoise(data, 0.30f, rng);
+            AddFormants(data, 420f, 980f, 2100f);
+            ApplyWarble(data, 32f, 3.1f);
+            ApplyEnvelope(data, 0.22f, 0.75f);
+
+            // The head. Everything above 900 Hz is foam now.
+            LowPass(data, 900f);
+
+            // The cavity: a sealed moulded head rings around 300 Hz, which is what turns
+            // "quiet groan" into "groan coming out of a box".
+            var cavity = Buffer(1.5f);
+            AddSine(cavity, 300f, 288f, 0.22f);
+            AddSine(cavity, 606f, 585f, 0.09f);
+            ApplyEnvelope(cavity, 0.26f, 0.7f);
+            Mix(data, cavity, 0.7f);
+
+            Normalize(data, 0.52f);
+            return ToClip("MascotGroan" + variant, data);
+        }
+
+        /// <summary>
+        /// The squeaker in the paw — Missus Squeak's whole personality.
+        ///
+        /// A cheap bellows toy: air forced through a reed, two quick chirps, no decay to
+        /// speak of. It is the only genuinely *cheerful* sound in the entire game, and it
+        /// arrives in threes out of the dark, which is the joke and also the threat.
+        /// </summary>
+        private static AudioClip MascotSqueak(System.Random rng, int variant)
+        {
+            var data = Buffer(0.40f);
+
+            float top = 1180f + variant * 160f;
+
+            // Up and then down, which is what a bellows does when it is squeezed and let go.
+            var up = Buffer(0.16f);
+            AddSine(up, top * 0.7f, top, 0.7f);
+            AddSaw(up, top * 0.35f, top * 0.5f, 0.16f);
+            ApplyEnvelope(up, 0.012f, 0.10f);
+
+            var down = Buffer(0.18f);
+            AddSine(down, top, top * 0.62f, 0.55f);
+            ApplyEnvelope(down, 0.010f, 0.13f);
+
+            Mix(data, up, 1f);
+            DelayInto(data, down, 0.17f, 0.9f);
+
+            // A breath of air past the reed, because a perfectly clean squeak is a synth.
+            var air = Buffer(0.40f);
+            AddNoise(air, 0.5f, rng);
+            HighPass(air, 2400f);
+            ApplyEnvelope(air, 0.02f, 0.22f);
+            Mix(data, air, 0.22f);
+
+            Normalize(data, 0.6f);
+            return ToClip("MascotSqueak" + variant, data);
+        }
+
+        /// <summary>
+        /// The princess calling out, and she is not muffled at all.
+        ///
+        /// She was hired for her voice. Everything else in the park is heard through foam,
+        /// so hers is the only clear human sound in the level — and clarity is what makes it
+        /// carry, both literally (she has the game's longest hearing range and the loudest
+        /// callout) and dramatically. A performer's projected note, held slightly too long
+        /// and ending on a breath rather than a stop.
+        /// </summary>
+        private static AudioClip PrincessCall(System.Random rng, int variant)
+        {
+            var data = Buffer(1.9f);
+
+            float root = 392f + variant * 46f;
+
+            // A sung note with vibrato. Real, trained, and about a semitone sharp.
+            AddSine(data, root, root * 1.03f, 0.5f);
+            AddSine(data, root * 2f, root * 2.03f, 0.18f);
+            AddSine(data, root * 3f, root * 3.03f, 0.07f);
+            AddFormants(data, 660f, 1300f, 2900f);
+            ApplyWarble(data, 18f, 5.4f);
+
+            // Swelling into a hard stop rather than fading. Nothing in a throat ends that
+            // way, which is the whole reason ApplyReverseEnvelope is in the toolkit.
+            ApplyReverseEnvelope(data, 1.35f, 0.12f);
+
+            // And the breath after it, which is the part that reads as a person.
+            var breath = Buffer(0.5f);
+            AddNoise(breath, 0.55f, rng);
+            AddFormants(breath, 540f, 1150f, 2400f);
+            ApplyEnvelope(breath, 0.06f, 0.32f);
+            DelayInto(data, breath, 1.36f, 0.5f);
+
+            Normalize(data, 0.7f);
+            return ToClip("PrincessCall" + variant, data);
+        }
+
+        private static AudioClip SomethingEnormous(System.Random rng)
+        {
+            const float length = 32f;
+            var mix = Buffer(length);
+
+            // --- the pulse ------------------------------------------------
+            const float beat = 0.52f;    // ~115 bpm, a hard walk or an easy run
+            int beats = Mathf.FloorToInt(length / beat);
+
+            for (int i = 0; i < beats; i++)
+            {
+                var thud = Buffer(0.5f);
+                AddSine(thud, 58f, 34f, 0.9f);
+                AddNoise(thud, 0.22f, rng);
+                LowPass(thud, 190f);
+                ApplyPercussiveEnvelope(thud, 0.004f, 13f);
+
+                // Every fourth is heavier, so there is a bar rather than a metronome.
+                DelayInto(mix, thud, i * beat, i % 4 == 0 ? 1f : 0.62f);
+            }
+
+            // --- the swell ------------------------------------------------
+            // Two voices a semitone apart. Not a chord and not meant to be one: at these
+            // frequencies a minor second is a physical beating rather than a harmony, and it
+            // is the most reliably unpleasant interval there is.
+            for (int i = 0; i < beats; i += 4)
+            {
+                var swell = Buffer(beat * 4.4f);
+                AddSaw(swell, 36.71f, 36.71f, 0.34f);
+                AddSaw(swell, 38.89f, 38.89f, 0.30f);
+                AddSine(swell, 73.42f, 73.42f, 0.16f);
+                LowPass(swell, 420f);
+                ApplyEnvelope(swell, beat * 1.4f, beat * 2.4f);
+
+                DelayInto(mix, swell, (i + 1) * beat, 0.85f);
+            }
+
+            // --- the top --------------------------------------------------
+            // A thin metallic shimmer well above the guns, so the bed has a ceiling without
+            // crowding anything. Reverse-enveloped, so each one arrives rather than decays.
+            for (int i = 0; i < 6; i++)
+            {
+                var shimmer = Buffer(2.6f);
+                AddNoise(shimmer, 0.5f, rng);
+                HighPass(shimmer, 3600f);
+                ApplyWarble(shimmer, 30f, 5.5f);
+                ApplyReverseEnvelope(shimmer, 2.0f, 0.35f);
+
+                DelayInto(mix, shimmer, 1.5f + i * 5.1f, 0.30f);
+            }
+
+            // One at the top of the loop, so every 32 seconds the floor drops out from
+            // under the pulse. (atSeconds, seconds, amplitude — not a bare gain.)
+            AddSubDrop(mix, 52f, 27f, atSeconds: 0.2f, seconds: 3.4f, amplitude: 0.5f);
+
+            MakeSeamless(mix, 1.0f);
+
+            // Louder than any level bed, which is the request and also correct: this is the
+            // only moment in the game where the music is allowed to be the loudest thing.
+            Normalize(mix, 0.86f);
+            return ToClip("SomethingEnormous", mix, true);
+        }
+
         private static AudioClip WaltzForNobody(System.Random rng)
         {
             const float length = 60f;

@@ -1,5 +1,7 @@
 using UnityEngine;
+using ZombieHouse.Audio;
 using ZombieHouse.Core;
+using ZombieHouse.UI;
 
 namespace ZombieHouse.Enemies
 {
@@ -39,9 +41,21 @@ namespace ZombieHouse.Enemies
         /// <summary>True once it has woken, so the HUD and the music can react.</summary>
         public static bool Engaged { get; private set; }
 
+        [Tooltip("Health fraction at which it turns. Below this it stops flinching almost "
+                 + "entirely and moves faster.")]
+        [Range(0f, 1f)] [SerializeField] private float secondPhaseAt = 0.45f;
+
+        [Tooltip("How much of its remaining stagger it loses in the second phase.")]
+        [Range(0f, 1f)] [SerializeField] private float secondPhaseResistance = 0.6f;
+
+        [Tooltip("Chase speed multiplier once it turns. Small on purpose — see the note "
+                 + "on why this is not larger.")]
+        [SerializeField] private float secondPhaseSpeed = 1.12f;
+
         private ZombieAI _ai;
         private ZombieHealth _health;
         private Transform _player;
+        private bool _turned;
 
         private void OnEnable()
         {
@@ -52,7 +66,16 @@ namespace ZombieHouse.Enemies
             _ai = GetComponent<ZombieAI>();
             _health = GetComponent<ZombieHealth>();
 
-            if (_health != null) _health.Died += OnDied;
+            if (_health != null)
+            {
+                _health.Died += OnDied;
+                _health.Damaged += OnDamaged;
+            }
+
+            // The bar builds itself now and stays hidden until the fight starts, so it can
+            // measure the boss's real rendered height while everything is still assembled.
+            if (GetComponent<BossHealthBar>() == null)
+                gameObject.AddComponent<BossHealthBar>().Initialise();
 
             // Asleep until the level is otherwise finished. HoldDormant is the same lever
             // the door ambushes use — it stops the ordinary proximity wake, so walking past
@@ -62,7 +85,11 @@ namespace ZombieHouse.Enemies
 
         private void OnDisable()
         {
-            if (_health != null) _health.Died -= OnDied;
+            if (_health != null)
+            {
+                _health.Died -= OnDied;
+                _health.Damaged -= OnDamaged;
+            }
             if (Current == this) Current = null;
         }
 
@@ -100,6 +127,56 @@ namespace ZombieHouse.Enemies
 
             Engaged = true;
             if (_ai != null) _ai.Wake();
+
+            // The bed changes the moment it moves, which is the only announcement this
+            // fight gets. Crossfaded rather than cut — see GameAudio.SwitchMusic.
+            GameAudio.SwitchMusic(Sfx.MusicBoss, Sfx.TensionBoss);
+        }
+
+        /// <summary>
+        /// Watches for the turn: below <see cref="secondPhaseAt"/> it stops flinching and
+        /// picks up speed.
+        ///
+        /// This is what "harder to kill" should mean beyond a bigger number. A boss with
+        /// twice the health is twice as long; a boss that changes at the halfway mark is a
+        /// fight with a shape, and — more usefully — it punishes the player for settling into
+        /// whatever rhythm got them through the first half.
+        ///
+        /// **The speed multiplier is deliberately small.** 1.12x keeps every boss under the
+        /// player's 6.8 m/s sprint, which is the one invariant this project has already
+        /// broken once: an enraged boss that outruns you does not make the fight harder, it
+        /// removes the fight and replaces it with a coin flip. Test Boss checks the enraged
+        /// speed, not just the base one.
+        /// </summary>
+        private void OnDamaged(DamageInfo info)
+        {
+            if (_turned || _health == null || _health.Max <= 0f) return;
+            if (_health.Current / _health.Max > secondPhaseAt) return;
+
+            _turned = true;
+
+            var profile = GetComponent<ZombieProfile>();
+            if (profile == null || profile.Archetype == null) return;
+
+            // CLONE first. Catalogue entries are shared static objects read by every zombie
+            // of that kind, so enraging the entry rather than a copy would permanently
+            // enrage every boss of that type for the rest of the session — and compound, so
+            // the second one starts where the first finished. Nothing errors; the difficulty
+            // just drifts upward and no test would notice.
+            ZombieArchetype enraged = profile.Archetype.Clone();
+
+            enraged.StaggerResistance =
+                Mathf.Clamp01(enraged.StaggerResistance +
+                              (1f - enraged.StaggerResistance) * secondPhaseResistance);
+
+            enraged.ChaseSpeed *= secondPhaseSpeed;
+
+            if (_ai != null) _ai.ApplyArchetype(enraged);
+
+            // A second, louder announcement. Same bed — restarting it here would be a cut,
+            // and the point is that the thing changed, not that the level did.
+            GameAudio.PlayAt(Sfx.ZombieRise, transform.position, 1f, 0f);
+            Noise.Emit(transform.position, 20f);
         }
 
         private void OnDied(DamageInfo info)

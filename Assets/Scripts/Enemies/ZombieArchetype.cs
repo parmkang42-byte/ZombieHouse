@@ -345,7 +345,7 @@ namespace ZombieHouse.Enemies
                 // straight line, and a hit that takes most of a health bar. The fight is
                 // about the room, not about aim — you are meant to be moving.
                 Kind = ZombieKind.BossZombie, Name = "The Landlord", Weight = 0f,
-                Health = 2900f, StaggerResistance = 0.86f,
+                Health = 4100f, StaggerResistance = 0.86f,
                 WanderSpeed = 0.6f, InvestigateSpeed = 1.6f, ChaseSpeed = 3.4f, TurnSpeed = 95f,
                 AttackDamage = 34f, AttackCooldown = 2.2f, AttackWindup = 0.75f,
                 AttackRange = 3.2f,
@@ -359,7 +359,7 @@ namespace ZombieHouse.Enemies
                 // The wood. Rifle-vulnerable like every bear, which keeps the level's own
                 // lesson intact at the size where it matters most.
                 Kind = ZombieKind.BossBear, Name = "The Warden", Weight = 0f,
-                Health = 3200f, StaggerResistance = 0.84f,
+                Health = 4400f, StaggerResistance = 0.84f,
                 WanderSpeed = 0.9f, InvestigateSpeed = 2.4f, ChaseSpeed = 5.2f, TurnSpeed = 130f,
                 AttackDamage = 36f, AttackCooldown = 2.2f, AttackWindup = 0.7f,
                 AttackRange = 3.6f,
@@ -375,7 +375,7 @@ namespace ZombieHouse.Enemies
                 // outside the distance everything else has taught you is safe; at this size
                 // the mop covers most of a classroom.
                 Kind = ZombieKind.BossJanitor, Name = "The Caretaker", Weight = 0f,
-                Health = 3000f, StaggerResistance = 0.87f,
+                Health = 4200f, StaggerResistance = 0.87f,
                 WanderSpeed = 0.7f, InvestigateSpeed = 1.9f, ChaseSpeed = 3.9f, TurnSpeed = 110f,
                 AttackDamage = 32f, AttackCooldown = 2.0f, AttackWindup = 0.65f,
                 AttackRange = 6.1f,
@@ -394,7 +394,7 @@ namespace ZombieHouse.Enemies
                 // the fight: a street is long and open, so you want to be somewhere it has
                 // to turn.
                 Kind = ZombieKind.BossHorse, Name = "The Marshal's Horse", Weight = 0f,
-                Health = 2900f, StaggerResistance = 0.82f,
+                Health = 4000f, StaggerResistance = 0.82f,
                 WanderSpeed = 1.2f, InvestigateSpeed = 3.4f, ChaseSpeed = 6.0f, TurnSpeed = 85f,
                 AttackDamage = 34f, AttackCooldown = 2.2f, AttackWindup = 0.6f,
                 AttackRange = 3.6f,
@@ -409,7 +409,7 @@ namespace ZombieHouse.Enemies
                 // the end of the level is the same as the answer all the way through it,
                 // only now you need all of it.
                 Kind = ZombieKind.BossScarab, Name = "The Queen", Weight = 0f,
-                Health = 2600f, StaggerResistance = 0.80f,
+                Health = 3700f, StaggerResistance = 0.80f,
                 WanderSpeed = 1.1f, InvestigateSpeed = 3.0f, ChaseSpeed = 5.4f, TurnSpeed = 240f,
                 AttackDamage = 28f, AttackCooldown = 1.8f, AttackWindup = 0.5f,
                 AttackRange = 3.4f,
@@ -424,8 +424,13 @@ namespace ZombieHouse.Enemies
                 // The valley. The fastest boss by a distance, and the one you cannot simply
                 // walk away from — the fight is about finding something to put between you.
                 Kind = ZombieKind.BossJaguar, Name = "The Green Mother", Weight = 0f,
-                Health = 2700f, StaggerResistance = 0.78f,
-                WanderSpeed = 1.4f, InvestigateSpeed = 3.8f, ChaseSpeed = 6.2f, TurnSpeed = 260f,
+                Health = 3800f, StaggerResistance = 0.78f,
+                // 5.9, not 6.2, and the ceiling is the enrage rather than the base. LevelBoss
+                // multiplies chase speed by 1.12 below half health, and 6.2 x 1.12 is 6.94
+                // against a 6.8 m/s sprint — she became uncatchable-from at exactly the point
+                // the player most needs to break away. 5.9 x 1.12 = 6.6, which still closes
+                // faster than anything else in the game and can still be walked away from.
+                WanderSpeed = 1.4f, InvestigateSpeed = 3.8f, ChaseSpeed = 5.9f, TurnSpeed = 260f,
                 AttackDamage = 33f, AttackCooldown = 2.1f, AttackWindup = 0.55f,
                 AttackRange = 3.8f,
                 SightRange = 34f, FieldOfView = 125f, MemorySeconds = 45f,
@@ -522,7 +527,7 @@ namespace ZombieHouse.Enemies
                 // size where it matters most: the gun that has carried you through six
                 // levels is the wrong gun here, and it stays the wrong gun at the end.
                 Kind = ZombieKind.BossMascot, Name = "The Big Cheese", Weight = 0f,
-                Health = 3100f, StaggerResistance = 0.85f,
+                Health = 4300f, StaggerResistance = 0.85f,
                 WanderSpeed = 0.6f, InvestigateSpeed = 1.7f, ChaseSpeed = 3.7f, TurnSpeed = 85f,
                 AttackDamage = 35f, AttackCooldown = 2.2f, AttackWindup = 0.8f,
                 AttackRange = 4.2f,
@@ -545,6 +550,34 @@ namespace ZombieHouse.Enemies
                 StrideCyclesPerMetre = 0.58f, LurchDegrees = 3.5f
             }
         };
+
+        /// <summary>
+        /// A private copy of this archetype.
+        ///
+        /// Every entry in <see cref="Catalogue"/> is a single shared object read by every
+        /// zombie of that kind, so anything wanting to change one at runtime — a boss
+        /// enraging at half health, say — must clone it first. Mutating the catalogue entry
+        /// instead applies the change to every zombie of that kind for the rest of the
+        /// session, and compounds each time it happens: the second boss starts where the
+        /// first one finished. Nothing errors, and the difficulty simply drifts.
+        /// </summary>
+        public ZombieArchetype Clone()
+        {
+            return new ZombieArchetype
+            {
+                Kind = Kind, Name = Name, Weight = Weight,
+                Health = Health, StaggerResistance = StaggerResistance,
+                WanderSpeed = WanderSpeed, InvestigateSpeed = InvestigateSpeed,
+                ChaseSpeed = ChaseSpeed, TurnSpeed = TurnSpeed,
+                AttackDamage = AttackDamage, AttackRange = AttackRange,
+                AttackCooldown = AttackCooldown, AttackWindup = AttackWindup,
+                SightRange = SightRange, FieldOfView = FieldOfView,
+                MemorySeconds = MemorySeconds, HearingMultiplier = HearingMultiplier,
+                RifleDamageMultiplier = RifleDamageMultiplier,
+                Scale = Scale, SkinTint = SkinTint,
+                StrideCyclesPerMetre = StrideCyclesPerMetre, LurchDegrees = LurchDegrees
+            };
+        }
 
         public static ZombieArchetype PickRandom()
         {

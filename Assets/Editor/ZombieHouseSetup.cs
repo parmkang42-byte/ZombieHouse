@@ -1017,6 +1017,7 @@ namespace ZombieHouse.EditorTools
                                                        MascotMousePrefabPath);
             GameObject dogPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotDog,
                                                      MascotDogPrefabPath);
+            AddLeapToPrefab(MascotDogPrefabPath);
             GameObject bowPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotBowMouse,
                                                      MascotBowMousePrefabPath);
             GameObject princessPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Princess,
@@ -1115,6 +1116,18 @@ namespace ZombieHouse.EditorTools
             spawnerObject.transform.SetParent(managers.transform, false);
             var spawner = spawnerObject.AddComponent<ZombieSpawner>();
 
+            // A third fewer than every other level: 31 against the default 46.
+            //
+            // The park is the most open space in the game and its population is now hidden
+            // behind things rather than standing on the grass, so the same headcount would
+            // mean the player is never not fighting — and a level where something is always
+            // visible has no dark to be frightened of. Fewer, better concealed, is a
+            // different level rather than an easier one.
+            var spawnerSo = new SerializedObject(spawner);
+            spawnerSo.FindProperty("totalZombies").intValue = 31;
+            spawnerSo.FindProperty("initialPopulation").intValue = 8;
+            spawnerSo.ApplyModifiedPropertiesWithoutUndo();
+
             // Mister Squeak is the baseline. A fifth of the park is Dilly Dog, using the
             // same "beast" slot the bears and janitors use — it is a second prefab with a
             // share, and nothing about that slot is quadruped.
@@ -1148,6 +1161,28 @@ namespace ZombieHouse.EditorTools
 
             foreach (Vector3 spot in park.PowerCellCandidates) princessSpots.Add(spot);
             spawner.ConfigureLurkers(princessPrefab, ZombieKind.StorybookPrincess, princessSpots);
+        }
+
+        /// <summary>
+        /// Bolts the pounce onto Dilly Dog's prefab.
+        ///
+        /// On the prefab rather than added by the spawner, so every dog has it however it
+        /// came into the world — drawn against a marker, placed as a lurker, or dropped in
+        /// by hand in the editor. A behaviour that only exists on the spawner's path is a
+        /// behaviour that quietly disappears the first time somebody places one manually.
+        /// </summary>
+        private static void AddLeapToPrefab(string path)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (prefab == null) return;
+
+            if (prefab.GetComponent<ZombieHouse.Enemies.LeapAttack>() == null)
+            {
+                GameObject instance = Object.Instantiate(prefab);
+                instance.AddComponent<ZombieHouse.Enemies.LeapAttack>();
+                PrefabUtility.SaveAsPrefabAsset(instance, path);
+                Object.DestroyImmediate(instance);
+            }
         }
 
         [MenuItem("Zombie House/Verify Merryland", false, 28)]
@@ -2873,7 +2908,7 @@ namespace ZombieHouse.EditorTools
                 // checks below that this ceiling does not speak for. A long fight you can
                 // disengage from and survive four mistakes in is an endurance test in the good
                 // sense; the same fight with no escape and one mistake was a coin flip.
-                if (boss.Health > 3400f)
+                if (boss.Health > 4800f)
                 {
                     Debug.LogError($"[Boss] {boss.Name} has {boss.Health:0} health — roughly " +
                                    $"{boss.Health / 34f:0} gatling hits landed with it standing on " +
@@ -3060,11 +3095,19 @@ namespace ZombieHouse.EditorTools
         {
             const float PlayerSprint = 6.8f;   // PlayerController.sprintSpeed
 
-            if (boss.ChaseSpeed < PlayerSprint) return 0;
+            // Checked at the ENRAGED speed, not the base one. LevelBoss multiplies chase
+            // speed by secondPhaseSpeed below half health, so a boss that is escapable on
+            // paper can become inescapable exactly when the player most needs to disengage —
+            // and that is the failure this whole check exists to prevent.
+            const float RageMultiplier = 1.12f;   // LevelBoss.secondPhaseSpeed
+            float enraged = boss.ChaseSpeed * RageMultiplier;
 
-            Debug.LogError($"[Boss] {boss.Name} chases at {boss.ChaseSpeed:0.0} m/s against a " +
-                           $"{PlayerSprint:0.0} m/s sprint — the player cannot disengage, so there " +
-                           "is no way to reposition, reload or retreat once it has seen them.");
+            if (enraged < PlayerSprint) return 0;
+
+            Debug.LogError($"[Boss] {boss.Name} chases at {boss.ChaseSpeed:0.0} m/s, " +
+                           $"{enraged:0.0} m/s enraged, against a {PlayerSprint:0.0} m/s sprint — " +
+                           "the player cannot disengage, so there is no way to reposition, " +
+                           "reload or retreat once it has seen them.");
             return 1;
         }
 
@@ -3234,6 +3277,218 @@ namespace ZombieHouse.EditorTools
         ///   * **The princess hears further than anything else in the game**, because she is
         ///     the caller: kill her first or fight the whole midway at once.
         /// </summary>
+        /// <summary>
+        /// The boss fight: the bar, the bed, and the turn at half health.
+        ///
+        /// The dangerous one here is the ENRAGE, because it mutates an archetype — and every
+        /// entry in ZombieArchetype.Catalogue is a single shared object read by every zombie
+        /// of that kind. Enraging the catalogue entry rather than a copy would permanently
+        /// buff every boss of that type for the rest of the session and compound each time,
+        /// so the second fight starts where the first finished. Nothing errors and no
+        /// existing test would notice; the difficulty simply drifts. That is checked here by
+        /// reading the catalogue back afterwards.
+        /// </summary>
+        [MenuItem("Zombie House/Test Boss Fight", false, 45)]
+        public static void TestBossFight()
+        {
+            int problems = 0;
+
+            problems += CheckEnrageDoesNotPoisonTheCatalogue();
+            problems += CheckHealthBarTracks();
+            problems += CheckBossBedExists();
+
+            Debug.Log(problems == 0
+                ? "[BossFight] PASS — it turns at half health, the bar follows, and the catalogue survives."
+                : $"[BossFight] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>Enraging a boss must not modify the shared archetype every zombie reads.</summary>
+        private static int CheckEnrageDoesNotPoisonTheCatalogue()
+        {
+            ZombieArchetype shared = null;
+            foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+                if (a.Kind == ZombieKind.BossZombie) shared = a;
+
+            if (shared == null)
+            {
+                Debug.LogError("[BossFight] No BossZombie archetype to test against.");
+                return 1;
+            }
+
+            float speedBefore = shared.ChaseSpeed;
+            float staggerBefore = shared.StaggerResistance;
+
+            // A clone, enraged exactly as LevelBoss does it.
+            ZombieArchetype copy = shared.Clone();
+            copy.ChaseSpeed *= 1.12f;
+            copy.StaggerResistance = Mathf.Clamp01(copy.StaggerResistance +
+                                                   (1f - copy.StaggerResistance) * 0.6f);
+
+            int problems = 0;
+
+            if (!Mathf.Approximately(shared.ChaseSpeed, speedBefore) ||
+                !Mathf.Approximately(shared.StaggerResistance, staggerBefore))
+            {
+                Debug.LogError($"[BossFight] Enraging a clone changed the CATALOGUE entry: chase " +
+                               $"{speedBefore:0.00} -> {shared.ChaseSpeed:0.00}, stagger " +
+                               $"{staggerBefore:0.00} -> {shared.StaggerResistance:0.00}. Clone() is " +
+                               "returning a reference rather than a copy, so every boss of this kind " +
+                               "would compound its own buff for the rest of the session.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log($"[BossFight] Enraged copy: chase {speedBefore:0.00} -> {copy.ChaseSpeed:0.00}, " +
+                          $"stagger {staggerBefore:0.00} -> {copy.StaggerResistance:0.00}; " +
+                          "the catalogue is untouched.");
+            }
+
+            // And the enraged speed must STILL be escapable, which is the invariant this
+            // project has already broken once.
+            const float PlayerSprint = 6.8f;
+            foreach (ZombieArchetype a in ZombieArchetype.Catalogue)
+            {
+                if (a.Weight != 0f || !a.Name.StartsWith("The ")) continue;
+
+                float enraged = a.ChaseSpeed * 1.12f;
+                if (enraged < PlayerSprint) continue;
+
+                Debug.LogError($"[BossFight] {a.Name} reaches {enraged:0.0} m/s once enraged, against " +
+                               $"a {PlayerSprint:0.0} m/s sprint — it becomes inescapable at exactly " +
+                               "the moment the player most needs to back away.");
+                problems++;
+            }
+
+            return problems;
+        }
+
+        /// <summary>The bar follows the health, and hides itself before the fight.</summary>
+        private static int CheckHealthBarTracks()
+        {
+            GameObject probe = ZombieFactory.Create("BarProbe");
+            int problems = 0;
+
+            try
+            {
+                var bar = probe.AddComponent<ZombieHouse.UI.BossHealthBar>();
+                bar.Initialise();
+
+                var canvas = probe.GetComponentInChildren<Canvas>(true);
+                if (canvas == null)
+                {
+                    Debug.LogError("[BossFight] The bar built no canvas.");
+                    return 1;
+                }
+
+                if (canvas.renderMode != RenderMode.WorldSpace)
+                {
+                    Debug.LogError("[BossFight] The bar is not world-space, so it will not hang " +
+                                   "over the boss's head.");
+                    problems++;
+                }
+
+                if (canvas.enabled)
+                {
+                    Debug.LogError("[BossFight] The bar is visible before the fight starts — it " +
+                                   "would point straight at a boss the player is meant to walk " +
+                                   "past without noticing.");
+                    problems++;
+                }
+
+                // It has to sit above the body, not inside it.
+                float head = 0f;
+                foreach (Renderer renderer in probe.GetComponentsInChildren<Renderer>())
+                    head = Mathf.Max(head, renderer.bounds.max.y);
+
+                float barY = canvas.transform.position.y;
+                if (barY < head)
+                {
+                    Debug.LogError($"[BossFight] The bar sits at {barY:0.00} m against a head at " +
+                                   $"{head:0.00} m — it is inside the boss.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[BossFight] Bar at {barY:0.00} m, clear of a {head:0.00} m head, " +
+                              "world-space and hidden until engaged.");
+                }
+
+                // And it must actually move. Driven by hand, because Time does not advance.
+                bar.Tick(0.016f, 0.25f);
+
+                var fill = canvas.transform.Find("Fill");
+                var backing = canvas.transform.Find("Backing");
+                if (fill == null || backing == null)
+                {
+                    Debug.LogError("[BossFight] The bar has no fill or no backing.");
+                    return problems + 1;
+                }
+
+                float full = backing.GetComponent<RectTransform>().sizeDelta.x;
+                float quarter = fill.GetComponent<RectTransform>().sizeDelta.x;
+
+                if (quarter > full * 0.5f)
+                {
+                    Debug.LogError($"[BossFight] At 25% health the fill is {quarter:0.00} of " +
+                                   $"{full:0.00} — the bar is not tracking.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log($"[BossFight] At 25% health the fill is {quarter / full:P0} of the bar.");
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe);
+            }
+
+            return problems;
+        }
+
+        /// <summary>The boss bed exists, is louder than a level bed, and is its own sound.</summary>
+        private static int CheckBossBedExists()
+        {
+            var bank = ZombieHouse.Audio.SoundBank.Build();
+
+            AudioClip[] boss, level;
+            if (!bank.TryGetValue(ZombieHouse.Audio.Sfx.MusicBoss, out boss) ||
+                boss == null || boss.Length == 0)
+            {
+                Debug.LogError("[BossFight] MusicBoss has no clip.");
+                return 1;
+            }
+
+            if (!bank.TryGetValue(ZombieHouse.Audio.Sfx.Music, out level) ||
+                level == null || level.Length == 0)
+            {
+                Debug.LogWarning("[BossFight] No house bed to compare loudness against.");
+                return 0;
+            }
+
+            float bossRms = Rms(boss[0]);
+            float levelRms = Rms(level[0]);
+
+            int problems = 0;
+
+            // "Louder" was the request, and it is also correct: this is the one moment the
+            // music is allowed to be the loudest thing in the mix.
+            if (bossRms <= levelRms)
+            {
+                Debug.LogError($"[BossFight] The boss bed is RMS {bossRms:0.000} against the house " +
+                               $"bed's {levelRms:0.000} — it is not louder, so nothing about the " +
+                               "mix says anything has changed.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log($"[BossFight] Boss bed: {boss[0].length:0.0}s, RMS {bossRms:0.000} " +
+                          $"against a level bed's {levelRms:0.000}.");
+            }
+
+            return problems;
+        }
+
         [MenuItem("Zombie House/Test Merryland", false, 44)]
         public static void TestMerryland()
         {

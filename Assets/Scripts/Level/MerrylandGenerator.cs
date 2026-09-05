@@ -78,6 +78,18 @@ namespace ZombieHouse.Level
         /// <summary>Open ground away from the attractions, for scattering things onto.</summary>
         private readonly List<Vector3> _openSpots = new List<Vector3>();
 
+        /// <summary>
+        /// Places with something between them and the midway — inside the tent, behind a
+        /// stall, round the back of the ticket booth, in the lee of the castle piers.
+        ///
+        /// Kept separate from <see cref="_openSpots"/> because they answer a different
+        /// question. Open spots are for things the player should be able to *find*: ammunition,
+        /// medkits, the Uzis. Concealed spots are for things that should find the player, and
+        /// a level that populates the two from the same list ends up with its zombies standing
+        /// in the middle of a paved promenade waiting to be shot at forty metres.
+        /// </summary>
+        private readonly List<Vector3> _concealedSpots = new List<Vector3>();
+
         private void Awake()
         {
             if (generateOnAwake) Generate();
@@ -145,6 +157,7 @@ namespace ZombieHouse.Level
             PowerUpSpawns.Clear();
             BeltCrateSpawns.Clear();
             _openSpots.Clear();
+            _concealedSpots.Clear();
             Generated = false;
         }
 
@@ -246,6 +259,7 @@ namespace ZombieHouse.Level
                 new Vector3(3.6f, 0.16f, 3.2f), ProtoMaterials.StallAwning);
 
             AddHidingSpot(World(new Vector3(-midwayWidth * 0.5f - 4.2f, 0f, z - 1f)), Vector3.right);
+            _concealedSpots.Add(World(new Vector3(-midwayWidth * 0.5f - 4.6f, 0f, z - 2.4f)));
         }
 
         // ---- the attractions -------------------------------------------------
@@ -268,8 +282,19 @@ namespace ZombieHouse.Level
             CreateBox("CarouselColumn", at + new Vector3(0f, 2.4f, 0f),
                 new Vector3(1.5f, 4.8f, 1.5f), ProtoMaterials.CarouselGilt, true);
 
-            CreateDecoration("CarouselCanopy", at + new Vector3(0f, 4.9f, 0f),
+            // Everything that turns hangs off this, and everything that turns is
+            // collider-free. The deck and the centre column above stay bolted down: the
+            // NavMesh is baked once at level start, so a rotating collider would spin
+            // underneath a navigation surface that does not move with it — agents would walk
+            // on a floor that is no longer where they think it is.
+            var spinner = new GameObject("CarouselSpin");
+            spinner.transform.SetParent(_container, false);
+            spinner.transform.position = transform.position + at + new Vector3(0f, 0f, 0f);
+            spinner.AddComponent<CarouselSpin>();
+
+            var canopy = CreateDecoration("CarouselCanopy", at + new Vector3(0f, 4.9f, 0f),
                 new Vector3(radius * 2.2f, 0.5f, radius * 2.2f), ProtoMaterials.CarouselPaint);
+            canopy.transform.SetParent(spinner.transform, true);
 
             const int poles = 12;
             for (int i = 0; i < poles; i++)
@@ -277,11 +302,17 @@ namespace ZombieHouse.Level
                 float angle = i * (360f / poles);
                 Vector3 offset = Quaternion.Euler(0f, angle, 0f) * (Vector3.forward * (radius * 0.72f));
 
-                CreateDecoration($"CarouselPole_{i}", at + offset + new Vector3(0f, 2.6f, 0f),
+                var pole = CreateDecoration($"CarouselPole_{i}", at + offset + new Vector3(0f, 2.6f, 0f),
                     new Vector3(0.11f, 4.4f, 0.11f), ProtoMaterials.CarouselGilt);
+
+                // Reparented worldPositionStays, so the ring keeps its geometry and only
+                // gains a pivot to turn about.
+                pole.transform.SetParent(spinner.transform, true);
             }
 
             ZombieSpawns.Add(World(at + new Vector3(radius * 0.5f, 0.5f, 0f)));
+            _concealedSpots.Add(World(at + new Vector3(-radius * 0.55f, 0.5f, radius * 0.4f)));
+            _concealedSpots.Add(World(at + new Vector3(radius * 0.3f, 0.5f, -radius * 0.6f)));
             AddHidingSpot(World(at + new Vector3(0f, 0f, -radius - 1.2f)), Vector3.back);
             AddHidingSpot(World(at + new Vector3(radius + 1.2f, 0f, 0f)), Vector3.right);
             _openSpots.Add(World(at + new Vector3(-radius - 3f, 0f, 4f)));
@@ -361,6 +392,8 @@ namespace ZombieHouse.Level
             ZombieSpawns.Add(World(at + new Vector3(radius * 0.35f, 0f, radius * 0.3f)));
             AddHidingSpot(World(at + new Vector3(0f, 0f, radius * 0.45f)), Vector3.back);
             MedkitSpawns.Add(World(at + new Vector3(-1.5f, 0.4f, 0f)));
+            _concealedSpots.Add(World(at + new Vector3(radius * 0.5f, 0f, radius * 0.45f)));
+            _concealedSpots.Add(World(at + new Vector3(radius * 0.55f, 0f, -radius * 0.4f)));
         }
 
         /// <summary>The teacup ride: a turntable of chipped cups you can walk between.</summary>
@@ -384,6 +417,7 @@ namespace ZombieHouse.Level
             ZombieSpawns.Add(World(at + new Vector3(0f, 0.4f, 0f)));
             AddHidingSpot(World(at + new Vector3(-radius - 1.4f, 0f, 0f)), Vector3.left);
             _openSpots.Add(World(at + new Vector3(0f, 0f, -radius - 4f)));
+            _concealedSpots.Add(World(at + new Vector3(-radius * 0.5f, 0.4f, radius * 0.5f)));
         }
 
         /// <summary>
@@ -423,6 +457,7 @@ namespace ZombieHouse.Level
 
             _openSpots.Add(World(at + new Vector3(-6f, 0f, 0f)));
             AddHidingSpot(World(at + new Vector3(0f, 0f, -4.2f)), Vector3.back);
+            _concealedSpots.Add(World(at + new Vector3(4.6f, 0f, 3.2f)));
         }
 
         /// <summary>
@@ -484,6 +519,8 @@ namespace ZombieHouse.Level
             ZombieSpawns.Add(World(at + new Vector3(0f, 0f, wide * 0.3f)));
             AddHidingSpot(World(at + new Vector3(-deep * 0.3f, 0f, -wide * 0.3f)), Vector3.right);
             BatterySpawns.Add(World(at + new Vector3(-deep * 0.3f, 0.4f, wide * 0.35f)));
+            _concealedSpots.Add(World(at + new Vector3(-deep * 0.3f, 0f, wide * 0.3f)));
+            _concealedSpots.Add(World(at + new Vector3(deep * 0.2f, 0f, -wide * 0.34f)));
         }
 
         /// <summary>A row of games booths down one side of the midway.</summary>
@@ -516,6 +553,7 @@ namespace ZombieHouse.Level
                 AddHidingSpot(World(new Vector3(x + 2.4f, 0f, z)), Vector3.right);
                 if (i % 2 == 0) ZombieSpawns.Add(World(new Vector3(x + 2.2f, 0f, z + 2f)));
                 _openSpots.Add(World(new Vector3(x - 3.2f, 0f, z)));
+                _concealedSpots.Add(World(new Vector3(x + 2.6f, 0f, z + 1.2f)));
             }
         }
 
@@ -574,6 +612,9 @@ namespace ZombieHouse.Level
             SurvivorSpawns.Add(World(new Vector3(-11f, 0f, z - 4f)));
             AddHidingSpot(World(new Vector3(-6.5f, 0f, z - 2.5f)), Vector3.back);
             AddHidingSpot(World(new Vector3(6.5f, 0f, z - 2.5f)), Vector3.back);
+            _concealedSpots.Add(World(new Vector3(-13f, 0f, z - 2.2f)));
+            _concealedSpots.Add(World(new Vector3(13f, 0f, z - 2.2f)));
+            _concealedSpots.Add(World(new Vector3(-8.5f, 0f, z - 3.4f)));
         }
 
         /// <summary>Lamp posts down the midway, most of them dead.</summary>
@@ -621,7 +662,25 @@ namespace ZombieHouse.Level
         /// </summary>
         private void ScatterContents()
         {
-            for (int i = 0; i < 14; i++) ZombieSpawns.Add(PickOpenSpot());
+            // Out of sight, not out in the open.
+            //
+            // These used to come from PickOpenSpot, which put fourteen of them standing on
+            // the grass either side of a paved promenade — visible from one end of the park
+            // to the other and killable at forty metres with the rifle, which is the one
+            // weapon this level is built to take away. Drawing from cover instead means the
+            // player clears the park attraction by attraction rather than sniping it.
+            foreach (Vector3 spot in _concealedSpots) ZombieSpawns.Add(spot);
+
+            // Whatever the attractions did not supply, tucked against the fence line rather
+            // than scattered down the middle.
+            int shortfall = Mathf.Max(0, 14 - _concealedSpots.Count);
+            for (int i = 0; i < shortfall; i++)
+            {
+                float side = _rng.NextDouble() < 0.5 ? -1f : 1f;
+                ZombieSpawns.Add(transform.position + new Vector3(
+                    side * Range(midwayWidth * 1.9f, midwayWidth * 2.5f), 0f,
+                    Range(-midwayLength * 0.85f, midwayLength * 0.85f)));
+            }
 
             for (int i = 0; i < 8; i++) AmmoSpawns.Add(PickOpenSpot() + Vector3.up * 0.4f);
             for (int i = 0; i < 5; i++) MedkitSpawns.Add(PickOpenSpot() + Vector3.up * 0.4f);
