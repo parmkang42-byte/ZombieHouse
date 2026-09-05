@@ -104,6 +104,13 @@ robocopy "<project>\ProjectSettings" "<stage>\ProjectSettings" /E /NFL /NDL /NJH
   -logFile "<stage>/verify.log"
 ```
 
+**Copying results back from a stage means `ProjectSettings/` too, not just `Assets/`.**
+`AddSceneToBuildSettings` writes `ProjectSettings/EditorBuildSettings.asset`, so a level built
+in a stage is registered *in the stage*. Copy back only `Assets/` and the new scene exists,
+verifies, and is absent from the build — it plays from the editor and is missing from a player
+build, which nothing in the test suite looks at. Level 7 shipped this way for one commit.
+Check with `grep -oE "Assets/Scenes/[A-Za-z0-9_]+\.unity" ProjectSettings/EditorBuildSettings.asset`.
+
 **Never `rm -rf Assets` inside an existing stage and re-copy.** It corrupts that copy's asset
 database and it comes back with ~69 phantom `UnityEngine.UI does not exist` errors in
 `HudController` that no code change fixes. Stage a whole new directory, or mirror over the

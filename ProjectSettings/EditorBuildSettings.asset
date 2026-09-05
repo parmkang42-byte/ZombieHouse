@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Level7_Merryland.unity
+    guid: e7b7deffb66c1774fadf7bb73408f355
+  - enabled: 1
     path: Assets/Scenes/Level6_Jungle.unity
     guid: a3ba1bdd52544be4abe6dd6e3290c89c
   - enabled: 1
