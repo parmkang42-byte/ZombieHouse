@@ -124,6 +124,8 @@ namespace ZombieHouse.Level
             BuildFerrisWheel(new Vector3(28f, 0f, 14f));
             BuildFunhouse(new Vector3(-27f, 0f, 34f));
             BuildStallRow();
+            BuildHedges();
+            BuildHedgeMaze();
             BuildCastle();
             BuildLamps();
             ScatterContents();
@@ -437,7 +439,25 @@ namespace ZombieHouse.Level
                 leg.transform.rotation = Quaternion.Euler(0f, 0f, 11f * side);
             }
 
-            // The wheel: sixteen spokes and a gondola on every other one.
+            // The hub everything turns about. Collider-free children only, for the same
+            // reason the carousel is: the NavMesh bakes once at level start, so a rotating
+            // collider would sweep through a navigation surface that does not move with it.
+            // Nothing on this wheel was ever walkable, so it costs nothing.
+            var hub = new GameObject("FerrisSpin");
+            hub.transform.SetParent(_container, false);
+            hub.transform.position = transform.position + at + new Vector3(0f, 15f, 0f);
+
+            // One revolution every four seconds, about X — the wheel stands upright and
+            // rolls about its hub. That is roughly fifteen times a real fairground wheel and
+            // it is the right call here: a wheel turning at a believable rate reads as
+            // stationary at a glance, and the whole job of this thing is to be the one
+            // moving object visible from anywhere in the park.
+            //
+            // No wander either, unlike the carousel. The carousel drifts because something
+            // has gone wrong with it; the wheel is turning steadily, which raises the much
+            // worse question of what is turning it.
+            hub.AddComponent<CarouselSpin>().ConfigureTurn(4f, Vector3.right, 0f);
+
             const int spokes = 16;
             for (int i = 0; i < spokes; i++)
             {
@@ -447,12 +467,14 @@ namespace ZombieHouse.Level
                 var spoke = CreateDecoration($"FerrisSpoke_{i}", at + new Vector3(0f, 15f, 0f) + offset * 0.5f,
                     new Vector3(0.22f, 9f, 0.22f), ProtoMaterials.FerrisSteel);
                 spoke.transform.rotation = Quaternion.Euler(angle, 0f, 0f);
+                spoke.transform.SetParent(hub.transform, true);
 
                 if (i % 2 != 0) continue;
 
-                CreateDecoration($"FerrisCar_{i}", at + new Vector3(0f, 15f, 0f) + offset,
+                var car = CreateDecoration($"FerrisCar_{i}", at + new Vector3(0f, 15f, 0f) + offset,
                     new Vector3(1.8f, 1.6f, 1.6f),
                     i % 4 == 0 ? ProtoMaterials.TentStripe : ProtoMaterials.CarouselPaint);
+                car.transform.SetParent(hub.transform, true);
             }
 
             _openSpots.Add(World(at + new Vector3(-6f, 0f, 0f)));
@@ -615,6 +637,190 @@ namespace ZombieHouse.Level
             _concealedSpots.Add(World(new Vector3(-13f, 0f, z - 2.2f)));
             _concealedSpots.Add(World(new Vector3(13f, 0f, z - 2.2f)));
             _concealedSpots.Add(World(new Vector3(-8.5f, 0f, z - 3.4f)));
+        }
+
+        /// <summary>
+        /// Hedges. This is what turns a lawn into a plan.
+        ///
+        /// Every one is above eye level, so the park stops being one room. The rule they all
+        /// follow is that a hedge must never fully close an enclosure — each has a gap, and
+        /// the gaps are deliberately not opposite each other, so crossing the park sideways
+        /// costs a detour and the route back from the castle is not the route out to it.
+        ///
+        /// **They are solid and they bake.** That is the entire point and also the entire
+        /// risk: this is the change most likely to wall something off, which is why the gaps
+        /// are wide (4 m against an agent's 0.8 m) and why VerifyMerryland walks every spawn,
+        /// survivor and power-cell candidate from the turnstiles rather than trusting them.
+        /// </summary>
+        private void BuildHedges()
+        {
+            const float height = 2.9f;
+            const float thickness = 1.1f;
+
+            // The ring. Hedges stop here, well short of the fence at ~61, so a continuous
+            // walkable loop runs round the whole park. This single number is what makes
+            // sealed pockets impossible: every enclosure opens onto the ring, so the worst a
+            // hedge can do is add a detour.
+            const float reach = 34f;
+
+            // z values chosen to fall in the GAPS between attractions rather than through
+            // them. The carousel occupies z -33 to -18, the big top -31 to -9, the teacups
+            // and wheel +1 to +17, the funhouse +27 to +41 — so -4 and +21 are the two
+            // clear bands across the park. A hedge through a tent seals the tent, and the
+            // tent looks completely normal from outside.
+            var runs = new (float Z, float[] Gaps, string Name)[]
+            {
+                (-4f,  new[] { -midwayWidth * 0.28f,  22f }, "South"),
+                (21f,  new[] {  midwayWidth * 0.30f, -22f }, "North"),
+            };
+
+            foreach (var run in runs)
+                BuildHedgeRun(run.Name, run.Z, run.Gaps, reach, height, thickness);
+
+            // The service alley: back-of-house behind the southern stalls. It runs entirely
+            // within one band — south of the z = -4 hedge — so it is a peninsula open at its
+            // south end rather than a divider that could close a region off.
+            float alleyX = midwayWidth * 0.5f + 7.5f;
+
+            // Stops at z = -27, short of the big top's doorway at z = -20.
+            //
+            // The alley runs at x = +14.5 and the tent's entrance faces west at x = +15, so
+            // an alley reaching z = -11 parked a hedge directly across the only way into the
+            // big top. From outside it looked like a service corridor behind the stalls and
+            // the tent looked like a tent; the reachability map is the only thing that showed
+            // a hedge and a doorway occupying the same metre of ground.
+            const float alleyFrom = -40f;
+            const float alleyTo = -27f;
+            const float breakAt = -34f;
+            const float breakWidth = 4.5f;
+
+            foreach (int half in new[] { -1, 1 })
+            {
+                float from = half < 0 ? alleyFrom : breakAt + breakWidth * 0.5f;
+                float to = half < 0 ? breakAt - breakWidth * 0.5f : alleyTo;
+                if (to - from < 1f) continue;
+
+                CreateBox($"ServiceHedge_{half}",
+                    new Vector3(alleyX, height * 0.5f, (from + to) * 0.5f),
+                    new Vector3(thickness, height, to - from), ProtoMaterials.ParkGrass, true);
+            }
+
+            _concealedSpots.Add(World(new Vector3(alleyX - 2.2f, 0f, alleyFrom + 6f)));
+            _concealedSpots.Add(World(new Vector3(alleyX - 2.2f, 0f, alleyTo - 5f)));
+            AmmoSpawns.Add(World(new Vector3(alleyX - 2.4f, 0.4f, breakAt - 6f)));
+            AddHidingSpot(World(new Vector3(alleyX - 2.4f, 0f, alleyFrom + 12f)), Vector3.left);
+        }
+
+        /// <summary>
+        /// One hedge across the park at a given z, with gaps at the given x positions.
+        ///
+        /// Builds the SEGMENTS BETWEEN the gaps rather than placing walls and cutting holes,
+        /// which is the difference between a wall that is definitely open where it should be
+        /// and one that is open wherever the arithmetic happened to leave it. Gaps are sorted
+        /// first so callers can list them in any order.
+        /// </summary>
+        private void BuildHedgeRun(string name, float z, float[] gaps, float outer,
+                                   float height, float thickness)
+        {
+            const float gapWidth = 5.4f;   // agents are 0.8 m across; this is not a squeeze
+
+            var edges = new List<float> { -outer };
+
+            var sorted = new List<float>(gaps);
+            sorted.Sort();
+
+            foreach (float gap in sorted)
+            {
+                edges.Add(gap - gapWidth * 0.5f);
+                edges.Add(gap + gapWidth * 0.5f);
+            }
+
+            edges.Add(outer);
+
+            for (int i = 0; i + 1 < edges.Count; i += 2)
+            {
+                float from = edges[i];
+                float to = edges[i + 1];
+                if (to - from < 0.6f) continue;
+
+                CreateBox($"Hedge{name}_{i}",
+                    new Vector3((from + to) * 0.5f, height * 0.5f, z),
+                    new Vector3(to - from, height, thickness), ProtoMaterials.ParkGrass, true);
+            }
+        }
+
+        /// <summary>
+        /// A hedge maze in the north-west corner.
+        ///
+        /// Every park had one and they were always disappointing — four turns and a bench in
+        /// the middle. That is exactly the right size here: big enough that you lose your
+        /// bearings for thirty seconds, small enough that it is not a puzzle. A maze that
+        /// takes real solving would stop the level dead, and the point is not the maze. The
+        /// point is that something is in it with you and the walls are above your eyeline.
+        ///
+        /// Built from an explicit grid rather than generated, because a generated maze is a
+        /// maze nobody has walked, and this one has to have a specific property: the power
+        /// cell can sit at its centre, so it must have exactly one interesting route in.
+        /// </summary>
+        private void BuildHedgeMaze()
+        {
+            const float cell = 4.2f;
+            const float height = 2.9f;
+
+            // The empty north-east corner, which is the only part of the park with room
+            // for a 30 m square. It has been moved twice: first it straddled a hedge, then
+            // it overlapped the funhouse. Nothing else is out here.
+            Vector3 origin = new Vector3(midwayWidth * 2.7f, 0f, midwayLength * 0.78f);
+
+            // '#' is hedge, '.' is walkable. The gap in the south wall is the only way in.
+            string[] plan =
+            {
+                "#######",
+                "#.....#",
+                "#.###.#",
+                "#.#...#",
+                "#.#.#.#",
+                "#...#.#",
+                "###.###",
+            };
+
+            for (int r = 0; r < plan.Length; r++)
+            {
+                for (int c = 0; c < plan[r].Length; c++)
+                {
+                    if (plan[r][c] != '#') continue;
+
+                    Vector3 at = origin + new Vector3((c - plan[r].Length * 0.5f) * cell,
+                                                      height * 0.5f,
+                                                      (plan.Length * 0.5f - r) * cell);
+
+                    // Exactly one cell, NOT cell + thickness.
+                    //
+                    // The first version used cell + thickness, so every wall block
+                    // overlapped its neighbours by the thickness and the corridors between
+                    // them were squeezed to nothing — the entire maze baked as one solid
+                    // lump and the whole north-west corner of the park was cut off. It looked
+                    // perfectly correct from above. A block on a grid must never be wider
+                    // than the grid spacing, which is the same mistake the big top made.
+                    CreateBox($"Maze_{r}_{c}", at,
+                        new Vector3(cell, height, cell), ProtoMaterials.ParkGrass, true);
+                }
+            }
+
+            // The middle of it. A power-cell position and something waiting.
+            // The heart is grid cell (4,3), which the plan marks '.'. Its neighbours are NOT
+            // all open, and that matters: the first version put a spawn marker one cell east
+            // at (4,4), which the plan marks '#'. The marker sat inside a solid hedge block —
+            // off the NavMesh, unreachable, and completely invisible from the outside.
+            //
+            // Offsets from the heart therefore have to be checked against the plan above
+            // rather than guessed. (5,3) below and (3,3) above are both open.
+            Vector3 heart = origin + new Vector3(-cell * 0.5f, 0f, -cell * 0.5f);
+
+            PowerCellCandidates.Add(World(heart));
+            _concealedSpots.Add(World(heart + new Vector3(0f, 0f, -cell)));   // cell (5,3)
+            MedkitSpawns.Add(World(heart + new Vector3(0f, 0.4f, cell)));     // cell (3,3)
+            AddHidingSpot(World(heart), Vector3.forward);
         }
 
         /// <summary>Lamp posts down the midway, most of them dead.</summary>

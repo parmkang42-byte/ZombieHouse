@@ -66,7 +66,7 @@ you intended to move them.
 | school | 1487 | 683 |
 | pyramid | 2265 | 1009 |
 | jungle | 12838 | 5732 |
-| merryland | 1289 | 565 |
+| merryland | 1846 | 824 |
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
@@ -152,6 +152,18 @@ real play. Drive the real entry point one frame at a time and assert on the outc
 much as easily as too little.
 
 **Prove a new test can fail** by breaking the thing it guards and watching it go red.
+
+**A box on a grid must never be wider than the grid spacing.** This has now sealed three
+separate things: the big top (panels of `radius*0.58` on a `chord` spacing, so removing one
+for a doorway left an opening of nothing), the hedge maze (`cell + thickness` blocks on a
+`cell` grid, so every corridor was squeezed out and the whole thing baked solid), and both
+looked completely correct from above.
+
+**Partition an open level with a perimeter ring, not with walls to the fence.** Merryland's
+hedges stop ~27 m short of the boundary, so a continuous loop runs round the park and every
+enclosure opens onto it — sealed pockets become impossible by construction rather than by
+inspection. Three rounds of patching individual pockets preceded that, each fix revealing the
+next; the pattern is why real parks and zoos have a loop path with the attractions inside it.
 
 **Write the map, don't guess.** A ten-line throwaway that printed an ASCII map of reachable
 cells found a level-connectivity bug that two rounds of plausible fixes had missed.

@@ -1222,20 +1222,39 @@ namespace ZombieHouse.EditorTools
             problems += CheckReachable(startHit.position, park.MotorPosition, "the gate motor");
 
             int reachable = 0;
+            var stranded = new List<Vector3>();
+
             foreach (Vector3 spawn in park.ZombieSpawns)
             {
                 NavMeshHit hit;
-                if (!NavMesh.SamplePosition(spawn, out hit, 4f, NavMesh.AllAreas)) continue;
+                if (!NavMesh.SamplePosition(spawn, out hit, 4f, NavMesh.AllAreas))
+                {
+                    stranded.Add(spawn);
+                    continue;
+                }
 
                 var path = new NavMeshPath();
                 NavMesh.CalculatePath(startHit.position, hit.position, NavMesh.AllAreas, path);
+
                 if (path.status == NavMeshPathStatus.PathComplete) reachable++;
+                else stranded.Add(spawn);
             }
 
             Debug.Log($"[Merryland] Marked spawns that can reach you: {reachable}/{park.ZombieSpawns.Count}");
-            if (reachable < park.ZombieSpawns.Count)
+
+            if (stranded.Count > 0)
             {
-                Debug.LogError($"[Merryland] {park.ZombieSpawns.Count - reachable} spawn(s) are stranded.");
+                // Naming the coordinates rather than counting them. A count tells you there
+                // is a hole; the position tells you which hedge is standing in front of what,
+                // which in a park with this many overlapping footprints is the entire
+                // difference between a fix and another round of guessing.
+                foreach (Vector3 spawn in stranded)
+                {
+                    Vector3 local = spawn - park.transform.position;
+                    Debug.LogError($"[Merryland] Stranded spawn at ({local.x:0.0}, {local.z:0.0}) " +
+                                   "— nothing can path from there to the turnstiles.");
+                }
+
                 problems++;
             }
 
@@ -1245,6 +1264,7 @@ namespace ZombieHouse.EditorTools
             foreach (Vector3 survivor in park.SurvivorSpawns)
                 problems += CheckReachable(startHit.position, survivor, "a survivor");
 
+            problems += CheckBossCanBePlaced(startHit.position, park.ExitPosition, park.PlayerSpawn);
             problems += CheckAttractionsAreEnterable(startHit.position);
             problems += CheckMascotsAreNotMagenta();
             problems += CheckParkMusic();
@@ -1271,6 +1291,56 @@ namespace ZombieHouse.EditorTools
 
             Debug.LogError($"[Merryland] {what} cannot be reached from the turnstiles.");
             return 1;
+        }
+
+        /// <summary>
+        /// There is somewhere for the boss to stand, and the player can get to it.
+        ///
+        /// Reproduces LevelDirector.PlaceBoss's own arithmetic rather than trusting it:
+        /// bossStandoff metres from the exit, back along the line towards the player's
+        /// start, sampled onto the NavMesh. If that sample fails, PlaceBoss logs a warning
+        /// and returns — and the level then runs with no boss at all, opening its exit on
+        /// the usual three conditions with nothing guarding it. Nothing errors.
+        ///
+        /// The second half matters as much: the spot has to be REACHABLE. A boss standing on
+        /// a navigable island behind the castle would wake, path nowhere, and leave the exit
+        /// permanently gated — which is the one failure mode worse than having no boss.
+        /// </summary>
+        private static int CheckBossCanBePlaced(Vector3 start, Vector3 exit, Vector3 playerSpawn)
+        {
+            const float BossStandoff = 7f;   // LevelDirector.bossStandoff
+
+            Vector3 towardsLevel = playerSpawn - exit;
+            towardsLevel.y = 0f;
+
+            Vector3 wanted = exit + (towardsLevel.sqrMagnitude > 0.01f
+                ? towardsLevel.normalized * BossStandoff
+                : Vector3.forward * BossStandoff);
+
+            NavMeshHit hit;
+            if (!NavMesh.SamplePosition(wanted, out hit, 12f, NavMesh.AllAreas))
+            {
+                Debug.LogError("[Merryland] No navigable ground within 12 m of where the boss " +
+                               "should stand. PlaceBoss would log a warning and return, and the " +
+                               "level would run with no boss and an unguarded exit.");
+                return 1;
+            }
+
+            var path = new NavMeshPath();
+            NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path);
+
+            if (path.status != NavMeshPathStatus.PathComplete)
+            {
+                Debug.LogError("[Merryland] The boss's ground is navigable but unreachable from " +
+                               "the turnstiles — it would wake, path nowhere, and gate the exit " +
+                               "for ever.");
+                return 1;
+            }
+
+            float drift = Vector3.Distance(wanted, hit.position);
+            Debug.Log($"[Merryland] The Big Cheese has ground {BossStandoff:0} m from the gate " +
+                      $"(sampled {drift:0.0} m off), and it can be reached from the start.");
+            return 0;
         }
 
         /// <summary>

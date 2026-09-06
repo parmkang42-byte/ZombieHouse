@@ -32,6 +32,26 @@ namespace ZombieHouse.Level
                  + "slowest back to its fastest.")]
         [SerializeField] private float wanderPeriod = 23f;
 
+        [Tooltip("Which way it turns, in local space. Y for a carousel, X for a ferris "
+                 + "wheel — the wheel stands upright and rolls about its hub.")]
+        [SerializeField] private Vector3 axis = Vector3.up;
+
+        /// <summary>
+        /// Sets the rate from a period instead of a rate, because that is how anyone
+        /// actually specifies a ride: "one turn every four seconds", not "ninety degrees a
+        /// second". Called by the generator.
+        /// </summary>
+        public void ConfigureTurn(float secondsPerRevolution, Vector3 turnAxis, float drift)
+        {
+            degreesPerSecond = 360f / Mathf.Max(0.05f, secondsPerRevolution);
+            axis = turnAxis;
+            wander = Mathf.Clamp01(drift);
+        }
+
+        /// <summary>Seconds for one full revolution at the steady rate. For the test.</summary>
+        public float SecondsPerRevolution =>
+            degreesPerSecond <= 0f ? 0f : 360f / degreesPerSecond;
+
         private float _phase;
 
         /// <summary>Total degrees turned. Read by the test, which cannot watch it spin.</summary>
@@ -58,7 +78,7 @@ namespace ZombieHouse.Level
             float drift = 1f + Mathf.Sin(_phase / Mathf.Max(0.1f, wanderPeriod) * Mathf.PI * 2f) * wander;
             float step = degreesPerSecond * drift * deltaTime;
 
-            transform.Rotate(0f, step, 0f, Space.Self);
+            transform.Rotate(axis.normalized * step, Space.Self);
             TurnedDegrees += step;
         }
     }
