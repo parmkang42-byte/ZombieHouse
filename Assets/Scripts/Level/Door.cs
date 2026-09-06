@@ -41,12 +41,14 @@ namespace ZombieHouse.Level
         [SerializeField] private float swingSeconds = 0.55f;
 
         [Header("Reach")]
-        [Tooltip("How close you must be to work it.")]
-        [SerializeField] private float interactRange = 2.4f;
+        [Tooltip("How close you must be to work it, measured to the middle of the leaf "
+                 + "rather than to the hinge.")]
+        [SerializeField] private float interactRange = 3.4f;
 
-        [Tooltip("How squarely you must be looking at it. 0.55 is a generous cone — a door "
-                 + "is a big target and hunting for the exact pixel is not the game.")]
-        [SerializeField] private float lookTolerance = 0.55f;
+        [Tooltip("How squarely you must be looking at it. 0.25 is about 75 degrees either "
+                 + "side — a door is an enormous target and hunting for the exact pixel is "
+                 + "not the game.")]
+        [SerializeField] private float lookTolerance = 0.25f;
 
         [Header("Noise")]
         [Tooltip("How far the hinges carry. A door is one of the loudest things you can do, "
@@ -89,6 +91,7 @@ namespace ZombieHouse.Level
         public void Initialise(Transform hinge, float hingeSign)
         {
             _leaf = hinge;
+            CaptureLeafWidth();
             _closed = hinge.localRotation;
             _open = _closed * Quaternion.Euler(0f, openAngle * hingeSign, 0f);
         }
@@ -124,6 +127,7 @@ namespace ZombieHouse.Level
 
                 _closed = _leaf.localRotation;
                 _open = _closed * Quaternion.Euler(0f, openAngle, 0f);
+                CaptureLeafWidth();
             }
         }
 
@@ -151,9 +155,45 @@ namespace ZombieHouse.Level
             _leaf.localRotation = Quaternion.Slerp(_closed, _open, eased);
         }
 
+        /// <summary>
+        /// Where the door actually is, for the purposes of reaching it.
+        ///
+        /// **Not `transform.position`.** That is the pivot, and the pivot sits on the hinge
+        /// edge of the opening rather than in the middle of it — the whole hierarchy is built
+        /// that way so the leaf can swing about an edge. Measuring the player's distance and
+        /// look angle to the pivot means measuring to the hinge post: on a three-metre
+        /// doorway the target sat a metre and a half to one side of where the door visibly
+        /// was, so aiming at the middle of the door aimed at nothing and the player had to
+        /// learn to sidle up to the hinge.
+        ///
+        /// The leaf's own centre is what the player sees and what they aim at.
+        /// </summary>
+        private Vector3 ReachPoint =>
+            _leaf != null ? _leaf.TransformPoint(new Vector3(_leafHalfWidth, 0f, 0f))
+                          : transform.position;
+
+        private float _leafHalfWidth = 1.2f;
+
+        /// <summary>
+        /// How far the leaf reaches from its hinge, so ReachPoint can find its middle.
+        ///
+        /// Read off the actual child rather than assumed, because doorways are not all the
+        /// same width — the house and the school build theirs from different cell sizes, and
+        /// a hard-coded offset would be right in one level and wrong in the other.
+        /// </summary>
+        private void CaptureLeafWidth()
+        {
+            if (_leaf == null) return;
+
+            Transform panel = _leaf.Find("Leaf");
+            if (panel == null) return;
+
+            _leafHalfWidth = panel.localPosition.x;
+        }
+
         private bool PlayerIsAtIt()
         {
-            Vector3 toDoor = transform.position - _player.position;
+            Vector3 toDoor = ReachPoint - _player.position;
             toDoor.y = 0f;
 
             if (toDoor.sqrMagnitude > interactRange * interactRange) return false;
@@ -161,7 +201,13 @@ namespace ZombieHouse.Level
             Camera view = Camera.main;
             if (view == null) return true;
 
-            return Vector3.Dot(view.transform.forward, toDoor.normalized) > lookTolerance;
+            // Compared in the horizontal plane. Looking slightly down at a door — which is
+            // what you do walking towards one — used to eat into the cone for no reason.
+            Vector3 gaze = view.transform.forward;
+            gaze.y = 0f;
+            if (gaze.sqrMagnitude < 0.001f) return true;
+
+            return Vector3.Dot(gaze.normalized, toDoor.normalized) > lookTolerance;
         }
 
         /// <summary>

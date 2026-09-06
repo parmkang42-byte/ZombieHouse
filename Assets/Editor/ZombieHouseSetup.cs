@@ -1223,12 +1223,15 @@ namespace ZombieHouse.EditorTools
 
             int reachable = 0;
             var stranded = new List<Vector3>();
+            var offMesh = new List<Vector3>();
 
             foreach (Vector3 spawn in park.ZombieSpawns)
             {
                 NavMeshHit hit;
                 if (!NavMesh.SamplePosition(spawn, out hit, 4f, NavMesh.AllAreas))
                 {
+                    // Not on the mesh at all: the marker is inside something solid.
+                    offMesh.Add(spawn);
                     stranded.Add(spawn);
                     continue;
                 }
@@ -1251,8 +1254,13 @@ namespace ZombieHouse.EditorTools
                 foreach (Vector3 spawn in stranded)
                 {
                     Vector3 local = spawn - park.transform.position;
-                    Debug.LogError($"[Merryland] Stranded spawn at ({local.x:0.0}, {local.z:0.0}) " +
-                                   "— nothing can path from there to the turnstiles.");
+                    // "Inside something" and "walled off" need completely different
+                    // fixes, and the coordinates alone cannot tell them apart.
+                    string why = offMesh.Contains(spawn)
+                        ? "it is not on the NavMesh at all — the marker is inside something solid"
+                        : "it is on the NavMesh but walled off from the turnstiles";
+
+                    Debug.LogError($"[Merryland] Stranded spawn at ({local.x:0.0}, {local.z:0.0}): {why}.");
                 }
 
                 problems++;

@@ -27,10 +27,11 @@ namespace ZombieHouse.Enemies
     [RequireComponent(typeof(ZombieHealth))]
     public class LevelBoss : MonoBehaviour
     {
-        [Tooltip("How close you have to come before it stirs, if the level's other "
-                 + "conditions are already met. Generous — a boss that wakes across a level "
-                 + "is a chase, and this is meant to be a fight in a place.")]
-        [SerializeField] private float wakeRange = 22f;
+        [Tooltip("How close you have to come before it stirs, once the kill quota is met. "
+                 + "Generous — a boss that wakes across a whole level is a chase, and this "
+                 + "is meant to be a fight in a place — but wide enough that walking the "
+                 + "main route past it is enough.")]
+        [SerializeField] private float wakeRange = 34f;
 
         /// <summary>The one in this level, or null. Read by GameManager to gate the exit.</summary>
         public static LevelBoss Current { get; private set; }
@@ -100,13 +101,21 @@ namespace ZombieHouse.Enemies
             GameManager game = GameManager.Instance;
             if (game == null) return;
 
-            // Everything except the boss itself. Deliberately not ExitUnlocked, which the
-            // boss is now part of — that would never become true and it would never wake.
-            bool levelOtherwiseDone = game.ZombiesNeededForExit <= 0
-                                   && game.AllSurvivorsRescued
-                                   && (!game.RequiresMotor || game.MotorPowered);
-
-            if (!levelOtherwiseDone) return;
+            // The kill quota alone, not the whole exit condition.
+            //
+            // This used to wait for quota AND survivors AND the motor, which meant the boss
+            // stirred only once literally everything else was finished — in the park that is
+            // twenty-one kills plus four rescues plus carrying the power cell the length of
+            // the level, and a player who explored in a different order simply never met it.
+            // A boss nobody reaches is not a climax, it is a rumour.
+            //
+            // Quota on its own still keeps the thing that made this good: it is asleep while
+            // you walk past it early, so the first time you see it move you have already been
+            // near it in the dark. It just no longer waits for the very last errand.
+            //
+            // Deliberately still not ExitUnlocked — the boss is part of that now, so waiting
+            // on it would mean waiting on itself and it would never wake at all.
+            if (game.ZombiesNeededForExit > 0) return;
 
             if (_player == null)
             {

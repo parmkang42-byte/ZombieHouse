@@ -66,7 +66,7 @@ you intended to move them.
 | school | 1487 | 683 |
 | pyramid | 2265 | 1009 |
 | jungle | 12838 | 5732 |
-| merryland | 1846 | 824 |
+| merryland | 2530 | 1148 |
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
@@ -164,6 +164,18 @@ hedges stop ~27 m short of the boundary, so a continuous loop runs round the par
 enclosure opens onto it — sealed pockets become impossible by construction rather than by
 inspection. Three rounds of patching individual pockets preceded that, each fix revealing the
 next; the pattern is why real parks and zoos have a loop path with the attractions inside it.
+
+**Two pieces of arithmetic that must agree, written twice, will disagree.** Merryland's
+`MazeCell` helper and `BuildHedgeMaze`'s wall loop both convert a grid cell to a position, and
+the helper carried a half-cell offset the loop did not — so every "cell centre" it returned
+was the corner where four cells meet, and a marker asking for an open cell landed half inside
+a wall. It was on the NavMesh and walled off from everything, which is the hardest shape of
+this bug to see. If two expressions must match, they must be identical line for line.
+
+**Positions derived from a wall's own coordinates land inside other things.** Two attempts at
+placing spawn markers off Merryland's hedge stubs both failed — beside the stub landed in a
+games stall, at its tip landed in a lateral hedge. In a crowded level, place markers against
+known-open ground and let the verify prove it, rather than computing them from geometry.
 
 **Write the map, don't guess.** A ten-line throwaway that printed an ASCII map of reachable
 cells found a level-connectivity bug that two rounds of plausible fixes had missed.

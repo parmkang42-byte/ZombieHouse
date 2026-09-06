@@ -125,6 +125,7 @@ namespace ZombieHouse.Level
             BuildFunhouse(new Vector3(-27f, 0f, 34f));
             BuildStallRow();
             BuildHedges();
+            BuildHedgeFingers();
             BuildHedgeMaze();
             BuildCastle();
             BuildLamps();
@@ -772,16 +773,31 @@ namespace ZombieHouse.Level
             // it overlapped the funhouse. Nothing else is out here.
             Vector3 origin = new Vector3(midwayWidth * 2.7f, 0f, midwayLength * 0.78f);
 
-            // '#' is hedge, '.' is walkable. The gap in the south wall is the only way in.
+            // '#' is hedge, '.' is walkable. Two ways in — the gap in the south wall and one
+            // in the west — so the maze is a route through rather than a pocket you back out
+            // of, and a player who enters from the ring can come out at the castle end.
+            //
+            // Hand-drawn rather than generated, deliberately. A generated maze is a maze
+            // nobody has walked, and this one has a specific shape to hold: a long false
+            // corridor down the east side that dead-ends, and a centre that can only be
+            // reached the long way round. Both were checked on the reachability map.
             string[] plan =
             {
-                "#######",
-                "#.....#",
-                "#.###.#",
-                "#.#...#",
-                "#.#.#.#",
-                "#...#.#",
-                "###.###",
+                "#############",
+                "#...#.....#.#",
+                "#.#.#.###.#.#",
+                "#.#...#...#.#",
+                "#.#####.###.#",
+                "..#.....#...#",
+                "#.#.#####.#.#",
+                "#.#.#...#.#.#",
+                "#...#.#...#.#",
+                "#####.#####.#",
+                // The gap is at index 5, aligned with row 9's opening directly above it.
+                // It was at 6, which is '#' one row up — a doorway into a wall, and the
+                // whole east half of the maze was reachable only the long way round from
+                // the west entrance.
+                "#####.#######",
             };
 
             for (int r = 0; r < plan.Length; r++)
@@ -808,19 +824,101 @@ namespace ZombieHouse.Level
             }
 
             // The middle of it. A power-cell position and something waiting.
-            // The heart is grid cell (4,3), which the plan marks '.'. Its neighbours are NOT
-            // all open, and that matters: the first version put a spawn marker one cell east
-            // at (4,4), which the plan marks '#'. The marker sat inside a solid hedge block —
-            // off the NavMesh, unreachable, and completely invisible from the outside.
-            //
-            // Offsets from the heart therefore have to be checked against the plan above
-            // rather than guessed. (5,3) below and (3,3) above are both open.
-            Vector3 heart = origin + new Vector3(-cell * 0.5f, 0f, -cell * 0.5f);
+            // Everything below is placed by GRID CELL and converted, rather than by guessing
+            // metre offsets from a "heart". The first version put a spawn one cell east of
+            // the centre onto a '#' — inside a solid hedge, off the NavMesh, unreachable, and
+            // completely invisible from outside. Naming the cell makes that mistake visible
+            // in the diff against the plan above.
+            Vector3 middle = MazeCell(origin, cell, plan, 7, 6);   // '.' — the centre
+            Vector3 west = MazeCell(origin, cell, plan, 7, 3);     // '.' — a side chamber
+            Vector3 deadEnd = MazeCell(origin, cell, plan, 3, 9);  // '.' — the false corridor
 
-            PowerCellCandidates.Add(World(heart));
-            _concealedSpots.Add(World(heart + new Vector3(0f, 0f, -cell)));   // cell (5,3)
-            MedkitSpawns.Add(World(heart + new Vector3(0f, 0.4f, cell)));     // cell (3,3)
-            AddHidingSpot(World(heart), Vector3.forward);
+            PowerCellCandidates.Add(World(middle));
+            AddHidingSpot(World(middle), Vector3.forward);
+
+            _concealedSpots.Add(World(west));
+            _concealedSpots.Add(World(deadEnd));
+
+            // Something worth the walk at the end of the corridor that goes nowhere.
+            MedkitSpawns.Add(World(deadEnd + Vector3.up * 0.4f));
+        }
+
+        /// <summary>
+        /// Centre of one maze cell, in the generator's local space.
+        ///
+        /// Exists so placements can be written as a row and a column and checked against the
+        /// plan by eye, instead of as metre offsets that have to be re-derived every time the
+        /// grid changes. The maze has already grown once and everything placed by offset
+        /// broke; everything placed by cell did not.
+        /// </summary>
+        private static Vector3 MazeCell(Vector3 origin, float cell, string[] plan, int row, int column)
+        {
+            int columns = plan.Length == 0 ? 0 : plan[0].Length;
+
+            // These two expressions must match BuildHedgeMaze's wall placement EXACTLY.
+            //
+            // They did not. This had a +0.5 on the column and a -0.5 on the row that the
+            // wall loop does not have, so every "cell centre" it returned was actually the
+            // corner where four cells meet — and a placement asking for an open cell got a
+            // point that was half inside the wall diagonally next to it. The marker was on
+            // the NavMesh (the open cell was right there) but walled off from everything.
+            //
+            // Two pieces of arithmetic that must agree, written twice, is the setup for this
+            // every time. They are now identical line for line.
+            return origin + new Vector3((column - columns * 0.5f) * cell, 0f,
+                                        (plan.Length * 0.5f - row) * cell);
+        }
+
+        /// <summary>
+        /// Short hedge stubs through the middle of the park.
+        ///
+        /// These are where most of the maze-like feeling comes from, and they are almost
+        /// free. A maze is not really about topology — it is about not being able to see
+        /// where you are going — and a stub hanging off an existing hedge blocks a sightline
+        /// without enclosing anything at all. Connectivity cannot be harmed by a wall with
+        /// three open sides.
+        ///
+        /// They are placed off the lateral hedges and the service alley rather than at random
+        /// so they read as part of the planting scheme, and every one of them is short enough
+        /// to walk round in a couple of seconds.
+        /// </summary>
+        private void BuildHedgeFingers()
+        {
+            const float height = 2.9f;
+            const float thickness = 1.1f;
+
+            // (x, z, length, alongZ) — a stub is either a north-south or an east-west spur.
+            var fingers = new (float X, float Z, float Length, bool AlongZ)[]
+            {
+                (-26f, -12f, 13f, true),    // off the south hedge, west side
+                ( -9f,   4f, 12f, true),    // beside the midway, breaking the long view north
+                (  9f, -14f, 11f, true),    // opposite it, offset so they do not form a gate
+                ( 26f,  10f, 12f, true),    // between the wheel and the north hedge
+                (-18f,  13f, 14f, false),   // an east-west spur under the funhouse
+                ( 20f, -30f, 13f, false),   // across the approach to the big top
+                (-30f,  -2f, 11f, false),   // off the west end of the south hedge
+            };
+
+            foreach (var finger in fingers)
+            {
+                Vector3 size = finger.AlongZ
+                    ? new Vector3(thickness, height, finger.Length)
+                    : new Vector3(finger.Length, height, thickness);
+
+                CreateBox($"HedgeFinger_{finger.X:0}_{finger.Z:0}",
+                    new Vector3(finger.X, height * 0.5f, finger.Z), size,
+                    ProtoMaterials.ParkGrass, true);
+
+                // No spawn markers derived from finger geometry.
+                //
+                // Two attempts at this both failed: beside the stub landed inside a games
+                // stall, and at its tip landed inside a lateral hedge. The park is crowded
+                // enough that any position computed from a wall's own coordinates will
+                // eventually land inside something else, and each attempt only reveals the
+                // next collision. The attractions and the maze already supply plenty of
+                // concealed positions, chosen against known-open ground — these stubs are
+                // for breaking sightlines, which they do without needing to hold anybody.
+            }
         }
 
         /// <summary>Lamp posts down the midway, most of them dead.</summary>
