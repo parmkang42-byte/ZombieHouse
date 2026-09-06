@@ -6,6 +6,9 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Level8_Cormorant.unity
+    guid: f0a33a6b218955444a172f7623027394
+  - enabled: 1
     path: Assets/Scenes/Level7_Merryland.unity
     guid: e7b7deffb66c1774fadf7bb73408f355
   - enabled: 1

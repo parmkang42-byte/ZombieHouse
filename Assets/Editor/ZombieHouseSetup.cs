@@ -35,6 +35,8 @@ namespace ZombieHouse.EditorTools
         private const string PyramidScenePath = ScenesFolder + "/Level5_Pyramid.unity";
         private const string JungleScenePath = ScenesFolder + "/Level6_Jungle.unity";
         private const string MerrylandScenePath = ScenesFolder + "/Level7_Merryland.unity";
+        private const string ShipScenePath = ScenesFolder + "/Level8_Cormorant.unity";
+        private const string SailorPrefabPath = PrefabsFolder + "/ZombieSailor.prefab";
         private const string MascotMousePrefabPath = PrefabsFolder + "/MascotMouse.prefab";
         private const string MascotDogPrefabPath = PrefabsFolder + "/MascotDog.prefab";
         private const string MascotBowMousePrefabPath = PrefabsFolder + "/MascotBowMouse.prefab";
@@ -1183,6 +1185,364 @@ namespace ZombieHouse.EditorTools
                 PrefabUtility.SaveAsPrefabAsset(instance, path);
                 Object.DestroyImmediate(instance);
             }
+        }
+
+        [MenuItem("Zombie House/Build Level 8 Cormorant", false, 7)]
+        public static void BuildLevel8()
+        {
+            BuildShip(true);
+        }
+
+        public static void BuildLevel8Automated()
+        {
+            BuildShip(false);
+        }
+
+        /// <summary>
+        /// THE CORMORANT — a freighter dead in the water, four decks deep.
+        ///
+        /// The first level in this game that runs vertically. Everything else is a walk from
+        /// one end of a place to the other; this is a climb, and the route crosses itself, so
+        /// the way back is through rooms already emptied.
+        /// </summary>
+        private static void BuildShip(bool interactive)
+        {
+            EnsureFolder(ScenesFolder);
+            EnsureFolder(PrefabsFolder);
+            EnsureFolder("Assets/Resources");
+            EnsureFolder(MaterialsFolder);
+            EnsureFolder(MeshesFolder);
+
+            int playerLayer = EnsureLayer(PlayerLayerName);
+            int enemyLayer = EnsureLayer(EnemyLayerName);
+            EnsureLayer(CorpseLayerName);
+            EnsureLayer(ViewModelLayerName);
+            EnsureLayer(DoorLayerName);
+
+            CreatePlaceholderMaterials();
+            ProtoMaterials.ClearCache();
+
+            // Sailors come later in the plan; for now the ship is populated by the ordinary
+            // walker so the hull and the decks can be proven on their own.
+            GameObject sailorPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.None,
+                                                        SailorPrefabPath);
+
+            Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            ConfigureShipLighting();
+            GameObject player = BuildPlayerRig(playerLayer, enemyLayer);
+            BuildShipManagers(sailorPrefab, player);
+            ApplyPostFx(player, LevelMood.School);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            EditorSceneManager.SaveScene(scene, ShipScenePath);
+            AddSceneToBuildSettings(ShipScenePath);
+
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+
+            Debug.Log("[ZombieHouse] Level 8 built at " + ShipScenePath + " — press Play.");
+
+            if (!interactive) return;
+
+            EditorUtility.DisplayDialog("Level 8 ready",
+                "Scene saved to " + ShipScenePath + ".\n\nPress Play.\n\n" +
+                "You start in the hold. The cell is below you in the engine room and the " +
+                "boat is three decks up.",
+                "Aboard");
+        }
+
+        /// <summary>
+        /// Fog, no moon, and almost nothing else. Below decks the only light is the deckhead
+        /// lamps that still work; above it, the sea gives nothing back.
+        /// </summary>
+        private static void ConfigureShipLighting()
+        {
+            RenderSettings.ambientMode = AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.06f, 0.068f, 0.08f);
+
+            RenderSettings.fog = true;
+            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogColor = new Color(0.045f, 0.052f, 0.062f);
+            RenderSettings.fogDensity = 0.030f;
+
+            var moonObject = new GameObject("Overcast");
+            var moon = moonObject.AddComponent<Light>();
+            moon.type = LightType.Directional;
+            moon.color = new Color(0.52f, 0.60f, 0.76f);
+            moon.intensity = 0.14f;
+            moon.shadows = LightShadows.Soft;
+            moonObject.transform.rotation = Quaternion.Euler(52f, 160f, 0f);
+
+            RenderSettings.sun = moon;
+            RenderSettings.skybox = null;
+        }
+
+        private static void BuildShipManagers(GameObject sailorPrefab, GameObject player)
+        {
+            var managers = new GameObject("--- Managers ---");
+
+            var audioObject = new GameObject("GameAudio");
+            audioObject.transform.SetParent(managers.transform, false);
+            var shipAudio = audioObject.AddComponent<ZombieHouse.Audio.GameAudio>();
+            audioObject.AddComponent<ZombieHouse.Audio.StingerAudio>();
+            audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
+            audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
+
+            // Its own bed comes in step 4 of the plan. Until then it borrows the tomb's,
+            // which is the closest thing already in the bank to a steel box underwater.
+            var audioSo = new SerializedObject(shipAudio);
+            audioSo.FindProperty("musicTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.MusicTomb;
+            audioSo.FindProperty("tensionTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.TensionTomb;
+            audioSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var gameManagerObject = new GameObject("GameManager");
+            gameManagerObject.transform.SetParent(managers.transform, false);
+            gameManagerObject.AddComponent<GameManager>();
+            gameManagerObject.AddComponent<HudController>();
+
+            var impactObject = new GameObject("ImpactSystem");
+            impactObject.transform.SetParent(managers.transform, false);
+            impactObject.AddComponent<ZombieHouse.Fx.ImpactSystem>();
+
+            var shipObject = new GameObject("Cormorant");
+            var ship = shipObject.AddComponent<ShipGenerator>();
+
+            var navMeshObject = new GameObject("NavMesh");
+            navMeshObject.transform.SetParent(managers.transform, false);
+            var baker = navMeshObject.AddComponent<RuntimeNavMeshBaker>();
+
+            var spawnerObject = new GameObject("ZombieSpawner");
+            spawnerObject.transform.SetParent(managers.transform, false);
+            var spawner = spawnerObject.AddComponent<ZombieSpawner>();
+
+            var directorObject = new GameObject("LevelDirector");
+            directorObject.transform.SetParent(managers.transform, false);
+            var director = directorObject.AddComponent<LevelDirector>();
+
+            var so = new SerializedObject(director);
+            AssignReference(so, "levelSourceBehaviour", ship);
+            AssignReference(so, "spawner", spawner);
+            AssignReference(so, "navMeshBaker", baker);
+            AssignReference(so, "player", player.transform);
+            AssignReference(so, "zombiePrefab", sailorPrefab);
+            so.ApplyModifiedPropertiesWithoutUndo();
+
+            ship.Generate();
+        }
+
+        [MenuItem("Zombie House/Verify Cormorant", false, 29)]
+        public static void VerifyCormorant()
+        {
+            EditorSceneManager.OpenScene(ShipScenePath, OpenSceneMode.Single);
+
+            var ship = Object.FindAnyObjectByType<ShipGenerator>();
+            if (ship == null)
+            {
+                Debug.LogError("[Cormorant] No ShipGenerator in the scene.");
+                return;
+            }
+
+            ProtoMaterials.ClearCache();
+            ship.Generate();
+
+            if (!ship.Generated)
+            {
+                Debug.LogError("[Cormorant] The generator refused to build — check the deck plans.");
+                Debug.Log("[Cormorant] FAIL — 1 problem(s).");
+                return;
+            }
+
+            var baker = Object.FindAnyObjectByType<RuntimeNavMeshBaker>();
+            baker.SetBakeVolume(ship.LevelBounds.center, ship.LevelBounds.size);
+            baker.Bake();
+
+            NavMeshTriangulation tri = NavMesh.CalculateTriangulation();
+            Debug.Log($"[Cormorant] {ship.DeckCount} decks {ship.DeckSpacing:0.0} m apart. " +
+                      $"NavMesh: {tri.vertices.Length} vertices, {tri.indices.Length / 3} triangles.");
+
+            int problems = 0;
+
+            NavMeshHit startHit;
+            if (!NavMesh.SamplePosition(ship.PlayerSpawn, out startHit, 4f, NavMesh.AllAreas))
+            {
+                Debug.LogError("[Cormorant] The player start is not on the NavMesh.");
+                Debug.Log("[Cormorant] FAIL — 1 problem(s).");
+                return;
+            }
+
+            problems += CheckDeckReachable(startHit.position, ship.ExitPosition, ship, "the davit");
+            problems += CheckDeckReachable(startHit.position, ship.MotorPosition, ship, "the motor");
+
+            foreach (Vector3 candidate in ship.PowerCellCandidates)
+                problems += CheckDeckReachable(startHit.position, candidate, ship, "a power cell position");
+
+            foreach (Vector3 survivor in ship.SurvivorSpawns)
+                problems += CheckDeckReachable(startHit.position, survivor, ship, "a survivor");
+
+            int reachable = 0;
+            foreach (Vector3 spawn in ship.ZombieSpawns)
+            {
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(spawn, out hit, 3f, NavMesh.AllAreas)) continue;
+
+                var path = new NavMeshPath();
+                NavMesh.CalculatePath(startHit.position, hit.position, NavMesh.AllAreas, path);
+                if (path.status == NavMeshPathStatus.PathComplete) reachable++;
+            }
+
+            Debug.Log($"[Cormorant] Sailor spawns that can reach you: {reachable}/{ship.ZombieSpawns.Count}");
+            if (reachable < ship.ZombieSpawns.Count)
+            {
+                Debug.LogError($"[Cormorant] {ship.ZombieSpawns.Count - reachable} spawn(s) are cut off.");
+                problems++;
+            }
+
+            problems += CheckCompanionways(startHit.position, ship);
+            problems += CheckEveryDeckIsReachable(startHit.position, ship);
+
+            Debug.Log(problems == 0
+                ? "[Cormorant] PASS — every deck is connected and the boat can be reached."
+                : $"[Cormorant] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// Reachability, reported with the DECK the target sits on.
+        ///
+        /// On a stacked level the deck number is most of the diagnosis: "a power cell is
+        /// unreachable" could be anything, while "a power cell on deck 0 is unreachable" says
+        /// the engine room companionway is broken and nothing else is.
+        /// </summary>
+        private static int CheckDeckReachable(Vector3 from, Vector3 to, ShipGenerator ship, string what)
+        {
+            int deck = Mathf.RoundToInt((to.y - ship.transform.position.y) / Mathf.Max(0.01f, ship.DeckSpacing));
+
+            NavMeshHit hit;
+            if (!NavMesh.SamplePosition(to, out hit, 4f, NavMesh.AllAreas))
+            {
+                Debug.LogError($"[Cormorant] {what} on deck {deck} is not on the NavMesh.");
+                return 1;
+            }
+
+            var path = new NavMeshPath();
+            NavMesh.CalculatePath(from, hit.position, NavMesh.AllAreas, path);
+
+            if (path.status == NavMeshPathStatus.PathComplete) return 0;
+
+            Debug.LogError($"[Cormorant] {what} on deck {deck} cannot be reached from the hold — " +
+                           "a companionway is not connecting.");
+            return 1;
+        }
+
+        /// <summary>
+        /// Both ends of every companionway, reported separately.
+        ///
+        /// A flight can fail in three places and they need different fixes: the foot may be
+        /// walled in, the flight itself may not bake (steps too tall for agentClimb), or the
+        /// landing at the top may be blocked by whatever the plan put there. "Deck 2 is
+        /// severed" cannot tell them apart; this can.
+        /// </summary>
+        private static int CheckCompanionways(Vector3 start, ShipGenerator ship)
+        {
+            int problems = 0;
+
+            foreach (ShipGenerator.Companionway way in ship.Companionways)
+            {
+                string label = $"deck {way.FromDeck} -> {way.FromDeck + 1}";
+
+                bool footOk = OnMeshAndReachable(start, way.Foot, out string footWhy);
+                bool landingOk = OnMeshAndReachable(start, way.Landing, out string landingWhy);
+
+                if (footOk && landingOk)
+                {
+                    Debug.Log($"[Cormorant] Companionway {label}: both ends walkable.");
+                    continue;
+                }
+
+                if (!footOk)
+                    Debug.LogError($"[Cormorant] Companionway {label}: its FOOT {footWhy}.");
+
+                if (!landingOk)
+                    Debug.LogError($"[Cormorant] Companionway {label}: its LANDING {landingWhy} — " +
+                                   "check what the deck above has in that cell.");
+
+                problems++;
+            }
+
+            return problems;
+        }
+
+        private static bool OnMeshAndReachable(Vector3 start, Vector3 target, out string why)
+        {
+            NavMeshHit hit;
+            if (!NavMesh.SamplePosition(target, out hit, 2.5f, NavMesh.AllAreas))
+            {
+                why = "is not on the NavMesh";
+                return false;
+            }
+
+            var path = new NavMeshPath();
+            NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path);
+
+            if (path.status == NavMeshPathStatus.PathComplete)
+            {
+                why = "is fine";
+                return true;
+            }
+
+            why = "is on the NavMesh but not reachable from the hold";
+            return false;
+        }
+
+        /// <summary>
+        /// Every deck has walkable ground the player can actually get to.
+        ///
+        /// This is the check a stacked level lives or dies on, and no other check covers it:
+        /// the markers might all happen to sit on two of the four decks, so a completely
+        /// severed deck would pass everything above while being unreachable. Sampling the
+        /// middle of each deck asks the question directly.
+        /// </summary>
+        private static int CheckEveryDeckIsReachable(Vector3 start, ShipGenerator ship)
+        {
+            int problems = 0;
+
+            for (int deck = 0; deck < ship.DeckCount; deck++)
+            {
+                Vector3 middle = ship.transform.position + Vector3.up * (deck * ship.DeckSpacing + 0.3f);
+
+                NavMeshHit hit;
+                if (!NavMesh.SamplePosition(middle, out hit, 8f, NavMesh.AllAreas))
+                {
+                    Debug.LogError($"[Cormorant] Deck {deck} has no navigable ground near its centre.");
+                    problems++;
+                    continue;
+                }
+
+                // The sample must not have escaped to a different deck, which an 8 m radius
+                // will happily do — the decks are only 3.5 m apart.
+                float drift = Mathf.Abs(hit.position.y - middle.y);
+                if (drift > ship.DeckSpacing * 0.5f)
+                {
+                    Debug.LogError($"[Cormorant] Deck {deck}'s sample landed {drift:0.0} m away " +
+                                   "vertically — it is measuring a different deck.");
+                    problems++;
+                    continue;
+                }
+
+                var path = new NavMeshPath();
+                NavMesh.CalculatePath(start, hit.position, NavMesh.AllAreas, path);
+
+                if (path.status != NavMeshPathStatus.PathComplete)
+                {
+                    Debug.LogError($"[Cormorant] Deck {deck} is navigable but severed from the hold.");
+                    problems++;
+                    continue;
+                }
+
+                Debug.Log($"[Cormorant] Deck {deck} is connected.");
+            }
+
+            return problems;
         }
 
         [MenuItem("Zombie House/Verify Merryland", false, 28)]
@@ -7761,6 +8121,14 @@ namespace ZombieHouse.EditorTools
             CreateMaterial("ruinstone", new Color(0.30f, 0.31f, 0.27f), 0.10f, 0f);
 
             // The snake: banded scales with a wet sheen.
+            // ---- The Cormorant. Assets, not just properties — see the note below.
+            CreateMaterial("deckplate", new Color(0.30f, 0.32f, 0.33f), 0.30f, 0.30f);
+            CreateMaterial("deckplatealt", new Color(0.26f, 0.28f, 0.30f), 0.30f, 0.30f);
+            CreateMaterial("hullplate", new Color(0.22f, 0.26f, 0.29f), 0.24f, 0.40f);
+            CreateMaterial("grating", new Color(0.34f, 0.35f, 0.34f), 0.42f, 0.55f);
+            CreateMaterial("containerrust", new Color(0.44f, 0.24f, 0.14f), 0.16f, 0.20f);
+            CreateMaterial("containerpaint", new Color(0.18f, 0.34f, 0.42f), 0.22f, 0.15f);
+
             // ---- Merryland. Every one of these must exist as an ASSET, not just as a
             // ProtoMaterials property: Get() silently falls back to an in-memory material
             // when the .mat is missing, and an in-memory material does not survive being

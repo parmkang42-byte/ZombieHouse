@@ -205,6 +205,24 @@ namespace ZombieHouse.Level
         public static Material Moss => Get("moss", new Color(0.13f, 0.24f, 0.12f), 0.05f);
         public static Material RuinStone => Get("ruinstone", new Color(0.30f, 0.31f, 0.27f), 0.10f);
 
+        // ---- The Cormorant -------------------------------------------------
+        // Wet rather than rusty. A ship abandoned long enough to rust through is a
+        // wreck, and a wreck is scenery; this one went dark last week and everything
+        // on it still works, which is a great deal worse.
+
+        /// deck plating, wet underfoot
+        public static Material DeckPlate => Get("deckplate", new Color(0.30f, 0.32f, 0.33f), 0.30f, 0.30f);
+        /// and the alternating plate, for a seam
+        public static Material DeckPlateAlt => Get("deckplatealt", new Color(0.26f, 0.28f, 0.30f), 0.30f, 0.30f);
+        /// bulkheads and the hull itself
+        public static Material HullPlate => Get("hullplate", new Color(0.22f, 0.26f, 0.29f), 0.24f, 0.40f);
+        /// companionway treads: galvanised
+        public static Material Grating => Get("grating", new Color(0.34f, 0.35f, 0.34f), 0.42f, 0.55f);
+        /// a container that has crossed a lot of ocean
+        public static Material ContainerRust => Get("containerrust", new Color(0.44f, 0.24f, 0.14f), 0.16f, 0.20f);
+        /// and one that has not
+        public static Material ContainerPaint => Get("containerpaint", new Color(0.18f, 0.34f, 0.42f), 0.22f, 0.15f);
+
         // ---- Merryland ----------------------------------------------------
         // Sun-bleached rather than grimy. The park closed in the eighties and nobody
         // boarded it up; forty summers took the red out of everything and left the
