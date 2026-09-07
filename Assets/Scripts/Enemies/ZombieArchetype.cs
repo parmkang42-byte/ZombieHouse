@@ -17,7 +17,12 @@ namespace ZombieHouse.Enemies
         // Merryland, the theme park. The costumes are the point: a mascot suit is a
         // person-shaped thing that is deliberately NOT person-shaped, and every one of
         // these was built to be reassuring.
-        MascotMouse, MascotDog, MascotBowMouse, StorybookPrincess, BossMascot
+        MascotMouse, MascotDog, MascotBowMouse, StorybookPrincess, BossMascot,
+
+        // The Cormorant. Not costumes this time but a crew, which is worse: the mascots
+        // were people hiding inside something cheerful, and these are just men who were
+        // working when it happened and have not stopped.
+        Deckhand, Officer
     }
 
     /// <summary>
@@ -539,6 +544,47 @@ namespace ZombieHouse.Enemies
             },
             new ZombieArchetype
             {
+                // THE DECKHAND -- the ship's ordinary walker, and the reason the corridors
+                // below are worse than the corridors anywhere else.
+                //
+                // Oilskins over a life vest is a lot of bulk, so he is slower and tougher
+                // than a shambler; but a deck is two metres wide and there is nowhere to
+                // back away to, which turns "slow and tough" from a manageable problem into
+                // the wrong problem entirely. Hears well: a steel hull carries a footstep
+                // the length of the ship.
+                Kind = ZombieKind.Deckhand, Name = "Deckhand", Weight = 62f,
+                Health = 230f, StaggerResistance = 0.5f,
+                WanderSpeed = 0.8f, InvestigateSpeed = 2.0f, ChaseSpeed = 3.3f, TurnSpeed = 190f,
+                AttackDamage = 17f, AttackCooldown = 1.25f, AttackWindup = 0.44f,
+                SightRange = 17f, FieldOfView = 110f, MemorySeconds = 14f,
+                HearingMultiplier = 1.35f,
+                Scale = 1.02f, SkinTint = new Color(0.92f, 0.97f, 0.95f),
+                StrideCyclesPerMetre = 0.58f, LurchDegrees = 6f
+            },
+            new ZombieArchetype
+            {
+                // THE OFFICER -- fewer, faster, and he came down from the bridge.
+                //
+                // The counterpart, the way Dilly Dog is Mister Squeak's: no more dangerous
+                // in a straight fight, but quick enough that a companionway does not buy you
+                // the time you thought it did. Sees furthest of anything on the ship, which
+                // is what makes the open weather deck the dangerous part of the level rather
+                // than the safe part.
+                //
+                // The braid and the white cap are the whole point of him: in a level lit by
+                // a few working lamps, one silhouette paler than the others tells you which
+                // one is about to close the distance.
+                Kind = ZombieKind.Officer, Name = "Officer", Weight = 38f,
+                Health = 195f, StaggerResistance = 0.36f,
+                WanderSpeed = 1.1f, InvestigateSpeed = 2.9f, ChaseSpeed = 4.7f, TurnSpeed = 280f,
+                AttackDamage = 14f, AttackCooldown = 1.0f, AttackWindup = 0.32f,
+                SightRange = 27f, FieldOfView = 125f, MemorySeconds = 18f,
+                HearingMultiplier = 1.15f,
+                Scale = 1.06f, SkinTint = new Color(0.90f, 0.95f, 0.94f),
+                StrideCyclesPerMetre = 0.66f, LurchDegrees = 4f
+            },
+            new ZombieArchetype
+            {
                 // Sees furthest and remembers longest. It is the one that finds you again
                 // after you thought you had lost it.
                 Kind = ZombieKind.Stalker, Name = "Stalker", Weight = 7f,
@@ -579,19 +625,84 @@ namespace ZombieHouse.Enemies
             };
         }
 
+        /// <summary>
+        /// The walkers that belong to no level in particular, and the pool a level draws
+        /// from when it has not asked for its own.
+        ///
+        /// Everything else in the catalogue is somebody's: the school's teachers and
+        /// children, the tomb's mummies, the park's mascots, the ship's crew, and the
+        /// bosses. Those are placed by name.
+        /// </summary>
+        public static readonly ZombieKind[] GeneralWalkers =
+        {
+            ZombieKind.Shambler, ZombieKind.Runner, ZombieKind.Brute,
+            ZombieKind.Toddler, ZombieKind.Stalker
+        };
+
+        private static ZombieKind[] _roster;
+
+        /// <summary>
+        /// What the current level's ordinary population is drawn from.
+        ///
+        /// This exists because the previous mechanism was Weight = 0 and nothing else. Every
+        /// level-specific type carried a zero weight to stay out of the draw, which worked
+        /// perfectly and silently until Merryland's four mascots were given real weights so
+        /// the park would have a mix. They were not park weights. PickRandom draws over the
+        /// whole catalogue, so they were global weights, and they totalled 110 against the
+        /// 109 of the five general walkers: half of every walker in the mansion, the forest,
+        /// the town, the school, the tomb and the jungle was rolling a mascot's health,
+        /// speed and scale while wearing that level's clothes. Nothing about the body said
+        /// so and no test looked.
+        ///
+        /// A pool you have to remember not to join is the wrong shape. This one you have to
+        /// be invited to.
+        /// </summary>
+        public static void SetRoster(params ZombieKind[] kinds)
+        {
+            _roster = kinds != null && kinds.Length > 0 ? kinds : null;
+        }
+
+        /// <summary>Back to the general walkers. Statics outlive a scene load; this matters.</summary>
+        public static void ClearRoster() => _roster = null;
+
+        /// <summary>What PickRandom is currently drawing from. For tests and for the log.</summary>
+        public static ZombieKind[] ActiveRoster => _roster ?? GeneralWalkers;
+
+        /// <summary>The catalogue entry for one kind, or the shambler if there is none.</summary>
+        public static ZombieArchetype Of(ZombieKind kind)
+        {
+            foreach (ZombieArchetype archetype in Catalogue)
+                if (archetype.Kind == kind) return archetype;
+
+            return Catalogue[0];
+        }
+
+        /// <summary>
+        /// One walker from the active pool, weighted.
+        ///
+        /// Weight is now the mix within a pool rather than membership of it, so a pool whose
+        /// members all carry zero — which is every pool made of level-specific types, since
+        /// those were all authored at zero — falls back to an even draw rather than always
+        /// returning the first one.
+        /// </summary>
         public static ZombieArchetype PickRandom()
         {
+            ZombieKind[] pool = ActiveRoster;
+
             float total = 0f;
-            foreach (ZombieArchetype archetype in Catalogue) total += archetype.Weight;
+            foreach (ZombieKind kind in pool) total += Of(kind).Weight;
+
+            if (total <= 0f) return Of(pool[Random.Range(0, pool.Length)]);
 
             float roll = Random.Range(0f, total);
-            foreach (ZombieArchetype archetype in Catalogue)
+            foreach (ZombieKind kind in pool)
             {
+                ZombieArchetype archetype = Of(kind);
                 roll -= archetype.Weight;
                 if (roll <= 0f) return archetype;
             }
 
-            return Catalogue[0];
+            return Of(pool[pool.Length - 1]);
         }
     }
 }

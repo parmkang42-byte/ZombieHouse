@@ -67,6 +67,7 @@ you intended to move them.
 | pyramid | 2265 | 1009 |
 | jungle | 12838 | 5732 |
 | merryland | 2530 | 1148 |
+| cormorant | 1453 | 641 |
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
@@ -81,6 +82,25 @@ have been allowed to move.
 authored, not rolled — `ZombieAppearance` skips the 0.92-1.07 crowd-variety spread for any
 archetype with `Weight == 0`, because a boss that is a different height every run puts its
 head through the ceiling on some runs and not others.
+
+**A level's population comes from its roster, not from `Weight`.** `ZombieArchetype.PickRandom`
+draws from `LevelDirector.zombieRoster`, and from the five `GeneralWalkers` when that list is
+empty. `Weight` is the mix *within* a pool; it is no longer what keeps a level's own types out
+of everyone else's levels.
+
+It used to be. Every level-specific kind carried `Weight = 0` and that was the entire
+mechanism — a convention, held only by remembering it. Merryland's four mascots were given
+real weights (34/26/30/20) so the park would have a variety, and because the draw ran over
+the whole catalogue those were global weights: `Test Zombie Roster` measured **50.3% of every
+walker in all seven levels** rolling a mascot's health, speed and scale while wearing that
+level's clothes. It shipped that way for a week and no test looked.
+
+So: a level whose population is its own names it (`SetRoster(so, ZombieKind.Deckhand)` at
+build time). Anything arriving through the spawner's beast, pack or lurker slots is forced by
+name and must **not** also be in the roster, or its statistics turn up inside the other
+outfit's body. The roster is a static and outlives a scene load, so `LevelDirector.Awake`
+clears it when the list is empty — a level that inherits the last one's roster is the same
+bug wearing a different hat.
 
 ---
 
@@ -120,14 +140,14 @@ Pixel and GPU tests need `-batchmode` **without** `-nographics`.
 
 ### Methods worth knowing
 
-`BuildLevel1Automated` … `BuildLevel7Automated` rebuild a level's scene.
+`BuildLevel1Automated` … `BuildLevel8Automated` rebuild a level's scene.
 `VerifyLevel`, `VerifyForest`, `VerifyTown`, `VerifySchool`, `VerifyPyramid`, `VerifyJungle`,
-`VerifyMerryland`
-bake the NavMesh and prove every spawn and the exit are reachable.
+`VerifyMerryland`, `VerifyCormorant`
+bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormorant` also proves the saved scene is crewed by the crew, which no amount of testing the outfits can tell you.
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`. All print PASS/FAIL.
 
 ---
 

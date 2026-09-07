@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using ZombieHouse.Core;
 using ZombieHouse.Enemies;
@@ -27,6 +28,13 @@ namespace ZombieHouse.Level
         [Header("Zombie")]
         [SerializeField] private GameObject zombiePrefab;
 
+        [Tooltip("The types this level's ordinary population is drawn from. Empty means the "
+                 + "five general walkers — the shambler, runner, brute, toddler and stalker. "
+                 + "A level whose population is its own, like the ship's crew or the park's "
+                 + "mascots, names them here; anything not listed can still be placed by "
+                 + "name through the spawner's beast, pack and lurker slots.")]
+        [SerializeField] private List<ZombieKind> zombieRoster = new List<ZombieKind>();
+
         [Header("Boss")]
         [Tooltip("The giant that guards the way out. Left empty, the level simply has no "
                  + "boss and the exit opens on the usual three conditions.")]
@@ -53,6 +61,15 @@ namespace ZombieHouse.Level
 
         private void Awake()
         {
+            // Before anything can spawn. The roster is a static on ZombieArchetype, which
+            // means it survives a scene load — so a level with no roster of its own has to
+            // clear the last one rather than inherit it. Leaving the park's mascots set
+            // while the mansion loads is exactly the bug this whole mechanism exists for.
+            if (zombieRoster != null && zombieRoster.Count > 0)
+                ZombieArchetype.SetRoster(zombieRoster.ToArray());
+            else
+                ZombieArchetype.ClearRoster();
+
             house = levelSourceBehaviour as ILevelSource;
 
             if (house == null)

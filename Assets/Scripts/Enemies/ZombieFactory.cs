@@ -36,7 +36,10 @@ namespace ZombieHouse.Enemies
 
         // Merryland. The first three are suits with somebody inside; the princess is
         // a walkaround performer, which is worse.
-        MascotMouse, MascotDog, MascotBowMouse, Princess
+        MascotMouse, MascotDog, MascotBowMouse, Princess,
+
+        // The Cormorant. Working clothes rather than costumes.
+        Deckhand, Officer
     }
 
     public static class ZombieFactory
@@ -99,6 +102,8 @@ namespace ZombieHouse.Enemies
                 case ZombieOutfit.MascotBowMouse: DressAsMascotMouse(bones, bow: true); break;
                 case ZombieOutfit.MascotDog: DressAsMascotDog(bones); break;
                 case ZombieOutfit.Princess: DressAsPrincess(bones); break;
+                case ZombieOutfit.Deckhand: DressAsDeckhand(bones); break;
+                case ZombieOutfit.Officer: DressAsOfficer(bones); break;
             }
 
             var rigHolder = root.AddComponent<ZombieRig>();
@@ -806,6 +811,206 @@ namespace ZombieHouse.Enemies
                 new Vector3(0f, -ShinLength - 0.06f, -0.10f), new Vector3(0.07f, 0.008f, 0.07f),
                 ProtoMaterials.Metal, null, 0f, false);
             spur.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        }
+
+        /// <summary>
+        /// A deckhand: oilskins, a life vest, and a sou'wester still done up under the chin.
+        ///
+        /// The sou'wester is the silhouette. A wide brim that drops at the back is not a
+        /// shape a head makes, so at the far end of a dark deck you can tell a crewman from
+        /// a shadow before you can see anything else about him — and the vest, which is the
+        /// only warm colour on the whole ship, tells you how far away he is.
+        ///
+        /// The bulk is honest: the Deckhand archetype is slower and tougher than a shambler
+        /// and this is what that looks like from the front.
+        /// </summary>
+        private static void DressAsDeckhand(ZombieBones bones)
+        {
+            if (bones.Spine != null)
+            {
+                CreatePart(bones.Spine, "Oilskin", PrimitiveType.Capsule,
+                    new Vector3(0f, 0.17f, 0f), new Vector3(0.36f, 0.23f, 0.30f),
+                    ProtoMaterials.Oilskin, null, 0f, false);
+
+                // The vest sits over it, front and back, with the straps at the sides.
+                CreatePart(bones.Spine, "VestFront", PrimitiveType.Cube,
+                    new Vector3(0f, 0.16f, 0.13f), new Vector3(0.26f, 0.30f, 0.07f),
+                    ProtoMaterials.LifeVest, null, 0f, false);
+
+                CreatePart(bones.Spine, "VestBack", PrimitiveType.Cube,
+                    new Vector3(0f, 0.16f, -0.13f), new Vector3(0.26f, 0.30f, 0.07f),
+                    ProtoMaterials.LifeVest, null, 0f, false);
+
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    CreatePart(bones.Spine, "VestStrap_" + s, PrimitiveType.Cube,
+                        new Vector3(0.13f * s, 0.16f, 0f), new Vector3(0.03f, 0.10f, 0.20f),
+                        ProtoMaterials.OilskinDark, null, 0f, false);
+                }
+
+                // Shoulders, where the cloth is doubled and has stayed wet longest.
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    CreatePart(bones.Spine, "Yoke_" + s, PrimitiveType.Sphere,
+                        new Vector3(0.15f * s, 0.33f, 0f), new Vector3(0.15f, 0.10f, 0.20f),
+                        ProtoMaterials.OilskinDark, null, 0f, false);
+                }
+            }
+
+            if (bones.Pelvis != null)
+            {
+                CreatePart(bones.Pelvis, "OilskinLegs", PrimitiveType.Cube,
+                    new Vector3(0f, -0.05f, 0f), new Vector3(0.31f, 0.16f, 0.24f),
+                    ProtoMaterials.Oilskin, null, 0f, false);
+            }
+
+            if (bones.Head != null)
+            {
+                // Brim: pushed back off the face and dropped at the neck, which is what a
+                // sou'wester is for and what makes the outline unmistakable.
+                var brim = CreatePart(bones.Head, "SouWesterBrim", PrimitiveType.Cylinder,
+                    new Vector3(0f, 0.185f, -0.03f), new Vector3(0.33f, 0.011f, 0.38f),
+                    ProtoMaterials.SouWester, null, 0f, false);
+                brim.transform.localRotation = Quaternion.Euler(-11f, 0f, 4f);
+
+                var crown = CreatePart(bones.Head, "SouWesterCrown", PrimitiveType.Sphere,
+                    new Vector3(0f, 0.235f, -0.01f), new Vector3(0.235f, 0.17f, 0.245f),
+                    ProtoMaterials.SouWester, null, 0f, false);
+                crown.transform.localRotation = Quaternion.Euler(-11f, 0f, 4f);
+
+                // The chin strap. Still fastened, which is the detail that says he did not
+                // take it off — nobody took anything off.
+                CreatePart(bones.Head, "ChinStrap", PrimitiveType.Cube,
+                    new Vector3(0f, -0.06f, 0.03f), new Vector3(0.19f, 0.018f, 0.19f),
+                    ProtoMaterials.OilskinDark, null, 0f, false);
+            }
+
+            AddWader(bones.KneeLeft, "L");
+            AddWader(bones.KneeRight, "R");
+        }
+
+        /// <summary>
+        /// An officer: a bridge coat, cuff braid, and the cap.
+        ///
+        /// Built pale on purpose. The Officer archetype is the fast one, and a level this
+        /// dark needs the fast one to be legible before it is in reach — so the cap cover is
+        /// the brightest surface in the game after the exit glow, and the braid catches what
+        /// little light there is. Read the white and back up.
+        /// </summary>
+        private static void DressAsOfficer(ZombieBones bones)
+        {
+            if (bones.Spine != null)
+            {
+                CreatePart(bones.Spine, "BridgeCoat", PrimitiveType.Capsule,
+                    new Vector3(0f, 0.17f, 0f), new Vector3(0.33f, 0.24f, 0.27f),
+                    ProtoMaterials.OfficerCoat, null, 0f, false);
+
+                // Double-breasted: two columns of three, which reads as a uniform at a
+                // distance where no individual button is visible.
+                for (int s = -1; s <= 1; s += 2)
+                {
+                    for (int b = 0; b < 3; b++)
+                    {
+                        CreatePart(bones.Spine, "Button_" + s + "_" + b, PrimitiveType.Sphere,
+                            new Vector3(0.055f * s, 0.28f - b * 0.09f, 0.135f),
+                            new Vector3(0.03f, 0.03f, 0.02f),
+                            ProtoMaterials.OfficerBraid, null, 0f, false);
+                    }
+                }
+
+                CreatePart(bones.Spine, "Epaulettes", PrimitiveType.Cube,
+                    new Vector3(0f, 0.345f, 0f), new Vector3(0.36f, 0.02f, 0.10f),
+                    ProtoMaterials.OfficerBraid, null, 0f, false);
+            }
+
+            if (bones.Pelvis != null)
+            {
+                CreatePart(bones.Pelvis, "CoatSkirt", PrimitiveType.Cube,
+                    new Vector3(0f, -0.06f, 0f), new Vector3(0.30f, 0.20f, 0.23f),
+                    ProtoMaterials.OfficerCoat, null, 0f, false);
+            }
+
+            // Braid at the cuffs, on the forearms — the rank, and the last thing you see
+            // before it reaches you.
+            AddCuffBraid(bones.ElbowLeft);
+            AddCuffBraid(bones.ElbowRight);
+
+            if (bones.Head != null)
+            {
+                CreatePart(bones.Head, "CapBand", PrimitiveType.Cylinder,
+                    new Vector3(0f, 0.175f, 0f), new Vector3(0.235f, 0.022f, 0.235f),
+                    ProtoMaterials.OfficerCoat, null, 0f, false);
+
+                CreatePart(bones.Head, "CapCrown", PrimitiveType.Cylinder,
+                    new Vector3(0f, 0.215f, -0.005f), new Vector3(0.265f, 0.032f, 0.255f),
+                    ProtoMaterials.OfficerCap, null, 0f, false);
+
+                // The peak, tipped down over the eyes.
+                var peak = CreatePart(bones.Head, "CapPeak", PrimitiveType.Cube,
+                    new Vector3(0f, 0.165f, 0.135f), new Vector3(0.22f, 0.014f, 0.13f),
+                    ProtoMaterials.OfficerCoat, null, 0f, false);
+                peak.transform.localRotation = Quaternion.Euler(9f, 0f, 0f);
+
+                CreatePart(bones.Head, "CapBadge", PrimitiveType.Cube,
+                    new Vector3(0f, 0.178f, 0.115f), new Vector3(0.05f, 0.035f, 0.008f),
+                    ProtoMaterials.OfficerBraid, null, 0f, false);
+            }
+
+            AddDeckShoe(bones.KneeLeft, "L");
+            AddDeckShoe(bones.KneeRight, "R");
+        }
+
+        /// <summary>
+        /// A wader: rubber to the knee, wide at the top where it has been turned down.
+        ///
+        /// Parented to the knee like the cowboy's boot, so the ragdoll's re-parenting pass
+        /// keeps it on the leg when the body falls apart.
+        /// </summary>
+        private static void AddWader(Transform knee, string suffix)
+        {
+            if (knee == null) return;
+
+            CreatePart(knee, "WaderShaft_" + suffix, PrimitiveType.Capsule,
+                new Vector3(0f, -ShinLength * 0.68f, 0f), new Vector3(0.145f, 0.15f, 0.145f),
+                ProtoMaterials.Wader, null, 0f, false);
+
+            // The turned-down top. Wider than the shaft, which is what says "rubber" rather
+            // than "trouser leg" at any distance at all.
+            CreatePart(knee, "WaderCuff_" + suffix, PrimitiveType.Cylinder,
+                new Vector3(0f, -ShinLength * 0.24f, 0f), new Vector3(0.17f, 0.035f, 0.17f),
+                ProtoMaterials.OilskinDark, null, 0f, false);
+
+            CreatePart(knee, "WaderFoot_" + suffix, PrimitiveType.Cube,
+                new Vector3(0f, -ShinLength - 0.03f, 0.06f), new Vector3(0.14f, 0.10f, 0.28f),
+                ProtoMaterials.Wader, null, 0f, false);
+        }
+
+        /// <summary>Two rings of braid at the cuff. Cosmetic, on the forearm bone.</summary>
+        private static void AddCuffBraid(Transform forearm)
+        {
+            if (forearm == null) return;
+
+            for (int r = 0; r < 2; r++)
+            {
+                CreatePart(forearm, "CuffBraid_" + r, PrimitiveType.Cylinder,
+                    new Vector3(0f, -ForearmLength * 0.74f + r * 0.035f, 0f),
+                    new Vector3(0.105f, 0.008f, 0.105f),
+                    ProtoMaterials.OfficerBraid, null, 0f, false);
+            }
+        }
+
+        /// <summary>A plain black deck shoe. The officer is not wading anywhere.</summary>
+        private static void AddDeckShoe(Transform knee, string suffix)
+        {
+            if (knee == null) return;
+
+            CreatePart(knee, "ShoeFoot_" + suffix, PrimitiveType.Cube,
+                new Vector3(0f, -ShinLength - 0.035f, 0.05f), new Vector3(0.12f, 0.07f, 0.25f),
+                ProtoMaterials.Wader, null, 0f, false);
+
+            CreatePart(knee, "TrouserCuff_" + suffix, PrimitiveType.Cylinder,
+                new Vector3(0f, -ShinLength * 0.55f, 0f), new Vector3(0.125f, 0.09f, 0.125f),
+                ProtoMaterials.OfficerCoat, null, 0f, false);
         }
 
         // ---- helpers --------------------------------------------------------

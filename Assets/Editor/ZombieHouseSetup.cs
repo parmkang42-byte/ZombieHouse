@@ -37,6 +37,7 @@ namespace ZombieHouse.EditorTools
         private const string MerrylandScenePath = ScenesFolder + "/Level7_Merryland.unity";
         private const string ShipScenePath = ScenesFolder + "/Level8_Cormorant.unity";
         private const string SailorPrefabPath = PrefabsFolder + "/ZombieSailor.prefab";
+        private const string OfficerPrefabPath = PrefabsFolder + "/ZombieOfficer.prefab";
         private const string MascotMousePrefabPath = PrefabsFolder + "/MascotMouse.prefab";
         private const string MascotDogPrefabPath = PrefabsFolder + "/MascotDog.prefab";
         private const string MascotBowMousePrefabPath = PrefabsFolder + "/MascotBowMouse.prefab";
@@ -1146,6 +1147,14 @@ namespace ZombieHouse.EditorTools
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", mousePrefab);
 
+            // The park's own draw. Only the mouse: Dilly Dog, Missus Squeak and the
+            // princesses all arrive through slots that force their kind, so the roll only
+            // ever has to answer for the bodies wearing the mouse suit.
+            //
+            // Before this existed the four mascots carried real weights in one global pool
+            // and half of every walker in the other six levels was rolling their numbers.
+            SetRoster(so, ZombieKind.MascotMouse);
+
             // The Big Cheese: the parade float, on the mouse's own prefab at 3.2x.
             AssignReference(so, "bossPrefab", mousePrefab);
             so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossMascot;
@@ -1222,16 +1231,20 @@ namespace ZombieHouse.EditorTools
             CreatePlaceholderMaterials();
             ProtoMaterials.ClearCache();
 
-            // Sailors come later in the plan; for now the ship is populated by the ordinary
-            // walker so the hull and the decks can be proven on their own.
-            GameObject sailorPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.None,
+            // The crew. Two of them: the deckhand carries the level and the officer is the
+            // one that closes. Below decks a corridor is two metres wide, so the difference
+            // between them has to be visible from the far end of it — dull yellow and an
+            // orange vest against navy and a white cap.
+            GameObject sailorPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Deckhand,
                                                         SailorPrefabPath);
+            GameObject officerPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Officer,
+                                                         OfficerPrefabPath);
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             ConfigureShipLighting();
             GameObject player = BuildPlayerRig(playerLayer, enemyLayer);
-            BuildShipManagers(sailorPrefab, player);
+            BuildShipManagers(sailorPrefab, officerPrefab, player);
             ApplyPostFx(player, LevelMood.School);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -1278,7 +1291,8 @@ namespace ZombieHouse.EditorTools
             RenderSettings.skybox = null;
         }
 
-        private static void BuildShipManagers(GameObject sailorPrefab, GameObject player)
+        private static void BuildShipManagers(GameObject sailorPrefab, GameObject officerPrefab,
+                                              GameObject player)
         {
             var managers = new GameObject("--- Managers ---");
 
@@ -1320,12 +1334,22 @@ namespace ZombieHouse.EditorTools
             directorObject.transform.SetParent(managers.transform, false);
             var director = directorObject.AddComponent<LevelDirector>();
 
+            // Roughly a quarter of the crew were officers, using the same "beast" slot the
+            // bears and Dilly Dog use — the slot has never had anything to do with being a
+            // quadruped, it is simply a second prefab with a share and a forced kind.
+            spawner.ConfigureBeasts(officerPrefab, 0.26f, ZombieKind.Officer);
+
             var so = new SerializedObject(director);
             AssignReference(so, "levelSourceBehaviour", ship);
             AssignReference(so, "spawner", spawner);
             AssignReference(so, "navMeshBaker", baker);
             AssignReference(so, "player", player.transform);
             AssignReference(so, "zombiePrefab", sailorPrefab);
+
+            // Everything drawn rather than placed is a deckhand. The officers arrive through
+            // the slot above, which forces their kind, so listing them here as well would let
+            // an officer's statistics turn up inside a deckhand's oilskins.
+            SetRoster(so, ZombieKind.Deckhand);
             so.ApplyModifiedPropertiesWithoutUndo();
 
             ship.Generate();
@@ -1398,6 +1422,7 @@ namespace ZombieHouse.EditorTools
                 problems++;
             }
 
+            problems += CheckCrewIsAboard();
             problems += CheckCompanionways(startHit.position, ship);
             problems += CheckEveryDeckIsReachable(startHit.position, ship);
 
@@ -1432,6 +1457,82 @@ namespace ZombieHouse.EditorTools
             Debug.LogError($"[Cormorant] {what} on deck {deck} cannot be reached from the hold — " +
                            "a companionway is not connecting.");
             return 1;
+        }
+
+        /// <summary>
+        /// That the scene on disk is crewed by the crew.
+        ///
+        /// Test Sailors proves the two outfits are built correctly. It says nothing at all
+        /// about whether the saved scene uses them, and that gap is where this project keeps
+        /// losing work: a scene built before the wiring existed looks identical, verifies
+        /// green on every geometric check, and ships full of shamblers in a ship.
+        /// </summary>
+        private static int CheckCrewIsAboard()
+        {
+            var director = Object.FindAnyObjectByType<LevelDirector>();
+            if (director == null)
+            {
+                Debug.LogError("[Cormorant] No LevelDirector in the scene.");
+                return 1;
+            }
+
+            int problems = 0;
+
+            var so = new SerializedObject(director);
+            SerializedProperty roster = so.FindProperty("zombieRoster");
+
+            if (roster == null || roster.arraySize == 0)
+            {
+                Debug.LogError("[Cormorant] The director has no roster, so every walker aboard " +
+                               "will be drawn from the general pool — shamblers and runners on " +
+                               "a ship, wearing oilskins.");
+                problems++;
+            }
+            else
+            {
+                var kinds = new List<string>();
+                bool deckhands = false;
+
+                for (int i = 0; i < roster.arraySize; i++)
+                {
+                    var kind = (ZombieKind)roster.GetArrayElementAtIndex(i).enumValueIndex;
+                    kinds.Add(kind.ToString());
+                    if (kind == ZombieKind.Deckhand) deckhands = true;
+                }
+
+                Debug.Log($"[Cormorant] Drawn population: {string.Join(", ", kinds)}.");
+
+                if (!deckhands)
+                {
+                    Debug.LogError("[Cormorant] The roster does not include the deckhand.");
+                    problems++;
+                }
+            }
+
+            var spawner = Object.FindAnyObjectByType<ZombieSpawner>();
+            if (spawner == null)
+            {
+                Debug.LogError("[Cormorant] No ZombieSpawner in the scene.");
+                return problems + 1;
+            }
+
+            var spawnerSo = new SerializedObject(spawner);
+            var beastKind = (ZombieKind)spawnerSo.FindProperty("beastKind").enumValueIndex;
+            float beastShare = spawnerSo.FindProperty("beastShare").floatValue;
+            bool hasBeastPrefab = spawnerSo.FindProperty("beastPrefab").objectReferenceValue != null;
+
+            if (beastKind != ZombieKind.Officer || !hasBeastPrefab || beastShare <= 0f)
+            {
+                Debug.LogError($"[Cormorant] The officers are not wired: kind {beastKind}, " +
+                               $"share {beastShare:0.00}, prefab {(hasBeastPrefab ? "set" : "missing")}.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log($"[Cormorant] Officers: {beastShare * 100f:0}% of the crew.");
+            }
+
+            return problems;
         }
 
         /// <summary>
@@ -3726,6 +3827,297 @@ namespace ZombieHouse.EditorTools
         /// existing test would notice; the difficulty simply drifts. That is checked here by
         /// reading the catalogue back afterwards.
         /// </summary>
+        /// <summary>
+        /// What the random draw actually produces.
+        ///
+        /// A level's ordinary population comes from ZombieProfile rolling PickRandom. Types
+        /// that belong to one particular level are supposed to be invisible to that roll and
+        /// placed by name instead; Weight = 0 is the whole mechanism, and it is a convention
+        /// rather than a rule, which means it holds only for as long as everybody remembers
+        /// it.
+        ///
+        /// So this measures the draw instead of trusting the convention.
+        /// </summary>
+        [MenuItem("Zombie House/Test Zombie Roster", false, 46)]
+        public static void TestZombieRoster()
+        {
+            int problems = 0;
+            const int Rolls = 40000;
+
+            // The walkers that belong to no level in particular. Everything else in the
+            // catalogue is somebody's: the school's, the tomb's, the park's, or a boss.
+            var general = new HashSet<ZombieKind>
+            {
+                ZombieKind.Shambler, ZombieKind.Runner, ZombieKind.Brute,
+                ZombieKind.Toddler, ZombieKind.Stalker
+            };
+
+            Random.InitState(20260907);
+            ZombieArchetype.ClearRoster();
+
+            var tally = new Dictionary<ZombieKind, int>();
+            for (int i = 0; i < Rolls; i++)
+            {
+                ZombieKind kind = ZombieArchetype.PickRandom().Kind;
+                tally.TryGetValue(kind, out int count);
+                tally[kind] = count + 1;
+            }
+
+            Debug.Log($"[Roster] {Rolls} draws from the general pool:");
+
+            int strays = 0;
+            foreach (KeyValuePair<ZombieKind, int> entry in tally)
+            {
+                float share = 100f * entry.Value / Rolls;
+                bool belongs = general.Contains(entry.Key);
+                Debug.Log($"[Roster]   {entry.Key,-22} {share,5:0.0}%  {(belongs ? "" : "<-- not a general walker")}");
+                if (!belongs) strays += entry.Value;
+            }
+
+            if (strays > 0)
+            {
+                Debug.LogError($"[Roster] {100f * strays / Rolls:0.0}% of every walker in every level " +
+                               "is rolling a type that belongs to one particular level. A mansion " +
+                               "shambler with a park mascot's health, speed and scale is not a " +
+                               "shambler, and nothing about it says so.");
+                problems++;
+            }
+
+            // ---- a roster of one --------------------------------------------
+            // The ship and the park both use this shape: everything drawn is one kind, and
+            // the variety comes from slots that force their own.
+            ZombieArchetype.SetRoster(ZombieKind.Deckhand);
+
+            int wrong = 0;
+            for (int i = 0; i < 2000; i++)
+                if (ZombieArchetype.PickRandom().Kind != ZombieKind.Deckhand) wrong++;
+
+            if (wrong > 0)
+            {
+                Debug.LogError($"[Roster] A roster of one produced {wrong} draws that were not it.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Roster] A roster of one draws only that one.");
+            }
+
+            // ---- weights are the mix inside the pool ------------------------
+            // Deckhand 62 against Officer 38. The point of the change is that these are now
+            // ship weights rather than weights against the whole catalogue.
+            ZombieArchetype.SetRoster(ZombieKind.Deckhand, ZombieKind.Officer);
+
+            int deckhands = 0;
+            for (int i = 0; i < Rolls; i++)
+                if (ZombieArchetype.PickRandom().Kind == ZombieKind.Deckhand) deckhands++;
+
+            float measured = 100f * deckhands / Rolls;
+            float expected = 100f * 62f / (62f + 38f);
+
+            if (Mathf.Abs(measured - expected) > 2f)
+            {
+                Debug.LogError($"[Roster] Deckhands were {measured:0.0}% of a two-kind roster; " +
+                               $"the weights say {expected:0.0}%.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log($"[Roster] Two-kind roster: {measured:0.0}% deckhand, expected {expected:0.0}%.");
+            }
+
+            // ---- a pool of zero-weight kinds still draws --------------------
+            // Every level-specific type was authored at Weight = 0, because zero used to be
+            // how you stayed out of the global pool. Put several of them in a roster and the
+            // old weighted walk would have returned the first one every time.
+            ZombieArchetype.SetRoster(ZombieKind.Teacher, ZombieKind.Kid, ZombieKind.Janitor);
+
+            var zeroSeen = new HashSet<ZombieKind>();
+            for (int i = 0; i < 2000; i++) zeroSeen.Add(ZombieArchetype.PickRandom().Kind);
+
+            if (zeroSeen.Count != 3)
+            {
+                Debug.LogError($"[Roster] A roster of three zero-weight kinds produced only " +
+                               $"{zeroSeen.Count} of them — the draw collapses when nothing " +
+                               "in the pool carries a weight.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Roster] A roster of zero-weight kinds draws all of them evenly.");
+            }
+
+            // ---- and clearing it goes back ----------------------------------
+            // The roster is a static, so it outlives a scene load. A level that does not set
+            // one must clear it, or it inherits whatever the last level was using.
+            ZombieArchetype.ClearRoster();
+
+            int leaked = 0;
+            for (int i = 0; i < 4000; i++)
+                if (!general.Contains(ZombieArchetype.PickRandom().Kind)) leaked++;
+
+            if (leaked > 0)
+            {
+                Debug.LogError($"[Roster] After clearing, {leaked} draws still came from a level roster.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Roster] Clearing returns the draw to the general walkers.");
+            }
+
+            Debug.Log(problems == 0
+                ? "[Roster] PASS — the draw contains only what the level asked for."
+                : $"[Roster] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The crew: that the clothes are on the right bones, and that none of them is solid.
+        ///
+        /// The second half is the one worth having. CreatePart strips the collider from any
+        /// part without a hit multiplier, so every garment is cosmetic — but that is a
+        /// property of how the outfit was written, not something the type system enforces,
+        /// and one CreatePart call with a stray multiplier gives a sou'wester that soaks
+        /// headshots. It would look completely normal. The only symptom is that the ship
+        /// feels unaccountably spongy, which is not a symptom anybody can act on.
+        /// </summary>
+        [MenuItem("Zombie House/Test Sailors", false, 47)]
+        public static void TestSailors()
+        {
+            int problems = 0;
+
+            problems += CheckCrewOutfit(ZombieOutfit.Deckhand, ZombieKind.Deckhand,
+                new[] { "Oilskin", "VestFront", "VestBack", "OilskinLegs" },
+                new[] { "SouWesterBrim", "SouWesterCrown", "ChinStrap" },
+                new[] { "WaderShaft_L", "WaderFoot_L", "WaderShaft_R", "WaderFoot_R" });
+
+            problems += CheckCrewOutfit(ZombieOutfit.Officer, ZombieKind.Officer,
+                new[] { "BridgeCoat", "Epaulettes", "CoatSkirt" },
+                new[] { "CapBand", "CapCrown", "CapPeak", "CapBadge" },
+                new[] { "ShoeFoot_L", "ShoeFoot_R" });
+
+            // The two have to be different enough to matter. If the officer is not faster
+            // there is no reason for him to exist, and if he is faster than a sprint there
+            // is no reason for the player to exist.
+            ZombieArchetype deckhand = ZombieArchetype.Of(ZombieKind.Deckhand);
+            ZombieArchetype officer = ZombieArchetype.Of(ZombieKind.Officer);
+
+            const float PlayerSprint = 6.8f;
+
+            Debug.Log($"[Sailors] Deckhand {deckhand.Health:0} hp, chase {deckhand.ChaseSpeed:0.0} m/s. " +
+                      $"Officer {officer.Health:0} hp, chase {officer.ChaseSpeed:0.0} m/s. " +
+                      $"Player sprints at {PlayerSprint:0.0}.");
+
+            if (officer.ChaseSpeed <= deckhand.ChaseSpeed)
+            {
+                Debug.LogError("[Sailors] The officer is not faster than the deckhand, which is " +
+                               "the only thing he is for.");
+                problems++;
+            }
+
+            if (officer.ChaseSpeed >= PlayerSprint)
+            {
+                Debug.LogError($"[Sailors] The officer chases at {officer.ChaseSpeed:0.0} m/s against a " +
+                               $"{PlayerSprint:0.0} m/s sprint — nothing aboard can be outrun.");
+                problems++;
+            }
+
+            if (deckhand.Health <= officer.Health)
+            {
+                Debug.LogError("[Sailors] The deckhand is not the tougher of the two, so the " +
+                               "oilskins and the vest are telling you the opposite of the truth.");
+                problems++;
+            }
+
+            Debug.Log(problems == 0
+                ? "[Sailors] PASS — both outfits are on the right bones, cosmetic, and read correctly."
+                : $"[Sailors] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// Builds one outfit and checks where every named piece landed.
+        ///
+        /// Bones rather than counts: a garment parented to the wrong bone still exists, still
+        /// renders, and follows the wrong joint when the body moves — a cap that swings with
+        /// the pelvis looks like an animation bug rather than a wiring one, and gets chased
+        /// in the wrong file.
+        /// </summary>
+        private static int CheckCrewOutfit(ZombieOutfit outfit, ZombieKind kind,
+                                           string[] onSpineOrPelvis, string[] onHead,
+                                           string[] onKnees)
+        {
+            int problems = 0;
+
+            GameObject body = ZombieFactory.Create("Test" + outfit, outfit);
+            var rig = body.GetComponent<ZombieHouse.Enemies.ZombieRig>();
+
+            Transform head = rig.Bones.Head;
+            Transform spine = rig.Bones.Spine;
+            Transform pelvis = rig.Bones.Pelvis;
+
+            problems += CheckPiecesUnder(outfit, onHead, head, "the head");
+            problems += CheckPiecesUnder(outfit, onKnees, rig.Bones.KneeLeft, "a knee",
+                                         rig.Bones.KneeRight);
+
+            foreach (string piece in onSpineOrPelvis)
+            {
+                if (FindChild(spine, piece) == null && FindChild(pelvis, piece) == null)
+                {
+                    Debug.LogError($"[Sailors] {outfit}: '{piece}' is on neither the spine nor the pelvis.");
+                    problems++;
+                }
+            }
+
+            // Nothing worn may be solid. Walk every collider on the body and confirm each one
+            // belongs to a hitbox — that is, to a piece of the walker rather than its clothes.
+            int solidGarments = 0;
+            foreach (Collider collider in body.GetComponentsInChildren<Collider>(true))
+            {
+                if (collider.GetComponent<ZombieHouse.Combat.Hitbox>() != null) continue;
+
+                Debug.LogError($"[Sailors] {outfit}: '{collider.name}' has a collider but no hitbox — " +
+                               "it will stop bullets meant for the body underneath it.");
+                solidGarments++;
+            }
+
+            problems += solidGarments;
+
+            int parts = body.GetComponentsInChildren<MeshRenderer>(true).Length;
+            int hitboxes = body.GetComponentsInChildren<ZombieHouse.Combat.Hitbox>(true).Length;
+            Debug.Log($"[Sailors] {outfit}: {parts} parts, {hitboxes} of them hitboxes, " +
+                      $"{solidGarments} solid garments.");
+
+            Object.DestroyImmediate(body);
+            return problems;
+        }
+
+        private static int CheckPiecesUnder(ZombieOutfit outfit, string[] pieces,
+                                            Transform bone, string where, Transform alternate = null)
+        {
+            int problems = 0;
+
+            foreach (string piece in pieces)
+            {
+                if (FindChild(bone, piece) != null) continue;
+                if (alternate != null && FindChild(alternate, piece) != null) continue;
+
+                Debug.LogError($"[Sailors] {outfit}: '{piece}' is not on {where}.");
+                problems++;
+            }
+
+            return problems;
+        }
+
+        private static Transform FindChild(Transform parent, string name)
+        {
+            if (parent == null) return null;
+
+            foreach (Transform child in parent)
+                if (child.name == name) return child;
+
+            return null;
+        }
+
+
         [MenuItem("Zombie House/Test Boss Fight", false, 45)]
         public static void TestBossFight()
         {
@@ -8357,6 +8749,28 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>The school's three, all the same humanoid in different clothes.</summary>
+        /// <summary>
+        /// Writes a level's draw pool into the director's serialized list.
+        ///
+        /// A serialized List&lt;enum&gt; is stored as an array of enumValueIndex, so this has to
+        /// size the array and set each element rather than assign the list — and it is worth
+        /// having in one place, because getting it wrong produces a roster that is silently
+        /// empty and a level that falls back to shamblers without saying anything.
+        /// </summary>
+        private static void SetRoster(SerializedObject director, params ZombieKind[] kinds)
+        {
+            SerializedProperty roster = director.FindProperty("zombieRoster");
+            if (roster == null)
+            {
+                Debug.LogError("[ZombieHouse] LevelDirector has no zombieRoster field to fill.");
+                return;
+            }
+
+            roster.arraySize = kinds.Length;
+            for (int i = 0; i < kinds.Length; i++)
+                roster.GetArrayElementAtIndex(i).enumValueIndex = (int)kinds[i];
+        }
+
         private static GameObject BuildSchoolPrefab(int enemyLayer, ZombieOutfit outfit, string path)
         {
             GameObject temp = ZombieFactory.Create("Zombie" + outfit, outfit);

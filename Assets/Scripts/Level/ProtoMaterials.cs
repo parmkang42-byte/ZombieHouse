@@ -223,6 +223,27 @@ namespace ZombieHouse.Level
         /// and one that has not
         public static Material ContainerPaint => Get("containerpaint", new Color(0.18f, 0.34f, 0.42f), 0.22f, 0.15f);
 
+        // The crew. Wet-weather gear is the only thing aboard with any colour in it, which
+        // is exactly why they wear it: on a ship lit by a handful of working lamps the
+        // silhouette has to do all the work the light cannot.
+
+        /// deck oilskins: the yellow has gone green and stayed wet
+        public static Material Oilskin => Get("oilskin", new Color(0.46f, 0.42f, 0.13f), 0.44f, 0.05f);
+        /// the folds and the shoulders, where it is darker
+        public static Material OilskinDark => Get("oilskindark", new Color(0.30f, 0.27f, 0.09f), 0.40f, 0.05f);
+        /// a sou'wester, the same cloth given a harder shell
+        public static Material SouWester => Get("souwester", new Color(0.41f, 0.37f, 0.11f), 0.55f, 0.05f);
+        /// waders: black rubber to the knee
+        public static Material Wader => Get("wader", new Color(0.07f, 0.07f, 0.08f), 0.36f, 0.05f);
+        /// the life vest, faded but still the brightest thing on the ship
+        public static Material LifeVest => Get("lifevest", new Color(0.62f, 0.27f, 0.06f), 0.14f, 0f);
+        /// the officer's coat
+        public static Material OfficerCoat => Get("officercoat", new Color(0.10f, 0.13f, 0.20f), 0.16f, 0.05f);
+        /// cuff braid and buttons, tarnished
+        public static Material OfficerBraid => Get("officerbraid", new Color(0.58f, 0.47f, 0.16f), 0.62f, 0.80f);
+        /// the cap cover: white once, and the only pale thing below decks
+        public static Material OfficerCap => Get("officercap", new Color(0.74f, 0.74f, 0.71f), 0.18f, 0f);
+
         // ---- Merryland ----------------------------------------------------
         // Sun-bleached rather than grimy. The park closed in the eighties and nobody
         // boarded it up; forty summers took the red out of everything and left the
