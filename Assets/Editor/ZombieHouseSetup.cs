@@ -3999,10 +3999,46 @@ namespace ZombieHouse.EditorTools
                 problems++;
             }
 
+            // And the other direction: an axis declared here and read by nobody. That one
+            // breaks nothing, which is exactly the problem — it sits in the settings looking
+            // like a live binding for the next person to reach for. The shared PadTriggers
+            // axis became one of these the moment each trigger got its own.
+            foreach (string line in settings.Split('\n'))
+            {
+                string trimmed = line.Trim();
+                if (!trimmed.StartsWith("m_Name: Pad")) continue;
+
+                string declared = trimmed.Substring("m_Name: ".Length).Trim();
+                if (System.Array.IndexOf(ZombieHouse.Player.PadInput.AxisNames, declared) >= 0) continue;
+
+                Debug.LogError($"[Gamepad] The Input Manager declares '{declared}' and PadInput " +
+                               "never reads it — a dead binding that still looks live.");
+                problems++;
+            }
+
             if (problems == 0)
             {
                 Debug.Log($"[Gamepad] All {ZombieHouse.Player.PadInput.AxisNames.Length} pad axes " +
-                          "are declared in the Input Manager.");
+                          "are declared, and nothing is declared that is not read.");
+            }
+
+            // The triggers must be two separate axes. Reading them off one shared axis is the
+            // obvious shortcut and it is wrong twice over: which trigger takes the positive
+            // sign depends on the driver — it came out backwards on a real pad, so aiming
+            // fired and firing aimed — and one axis cannot carry both at once, so aiming and
+            // then shooting cancels, which is the most ordinary thing anyone does with a pad.
+            bool split = System.Array.IndexOf(ZombieHouse.Player.PadInput.AxisNames, "PadLeftTrigger") >= 0
+                      && System.Array.IndexOf(ZombieHouse.Player.PadInput.AxisNames, "PadRightTrigger") >= 0;
+
+            if (!split)
+            {
+                Debug.LogError("[Gamepad] The triggers are not on separate axes. Aiming and firing " +
+                               "will cancel each other, and which one is which is a coin flip.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Gamepad] LT and RT are on separate axes, so aiming while firing works.");
             }
 
             // ---- a centred stick is centred ---------------------------------

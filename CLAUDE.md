@@ -13,7 +13,8 @@ the Python under `Tools_*` is offline build tooling that never ships.
 
 **Never move this project into OneDrive.** Unity rewrites `Library/` constantly, OneDrive
 locks those files mid-write, and the project comes back corrupted. It lives at
-`C:\Users\<user>\UnityProjects\ZombieHouse` deliberately. This applies to clones on other
+`C:\Users\<user>\Dev\ZombieHouse` deliberately (it was under `UnityProjects`
+until 2026-09-07; that copy is gone). This applies to clones on other
 machines too — GitHub Desktop defaults to `Documents\GitHub`, which is usually inside
 OneDrive. Change the path.
 
@@ -106,8 +107,16 @@ bug wearing a different hat.
 `Input.GetAxisRaw` throws on an undeclared axis instead of returning zero, and
 `InputReader.Move` reads the pad every frame whether one is connected or not — so a renamed
 axis is not a broken controller, it is a game that dies on its first frame for everybody.
-`Test Gamepad` cross-checks `PadInput.AxisNames` against that file. The axes are declared with
-`dead: 0` on purpose: Unity's per-axis deadzone is square, and `PadInput` applies a radial one.
+`Test Gamepad` cross-checks `PadInput.AxisNames` against that file in both directions, so an
+axis that is declared and no longer read is caught too. The axes are declared with `dead: 0`
+on purpose: Unity's per-axis deadzone is square, and `PadInput` applies a radial one.
+
+**The two triggers get an axis each - 9 and 10 - never the shared 3rd axis.** That axis
+carries both, one positive and one negative, and it is wrong twice over. Which trigger takes
+the positive sign depends on the driver: reading them off it shipped backwards on a real pad,
+so aiming fired the gun and firing aimed it. And one axis cannot carry both at once, so
+holding LT and then pulling RT cancels them - which is aiming down the sights and shooting,
+the most ordinary thing anyone does with a controller.
 
 ---
 

@@ -64,7 +64,7 @@ namespace ZombieHouse.Player
         public static readonly string[] AxisNames =
         {
             "PadMoveX", "PadMoveY", "PadLookX", "PadLookY",
-            "PadTriggers", "PadDpadX", "PadDpadY"
+            "PadLeftTrigger", "PadRightTrigger", "PadDpadX", "PadDpadY"
         };
 
         // ---- edge detection -------------------------------------------------
@@ -170,10 +170,23 @@ namespace ZombieHouse.Player
 #else
         // ---- legacy Input Manager -------------------------------------------
         // Axis indices are XInput's layout on Windows, which is what a wireless Xbox pad
-        // presents over Bluetooth. The third axis carries BOTH triggers on this backend —
-        // left positive, right negative — which is why they are read off one axis and why
-        // pulling both at once cancels them out. That is a limitation of this backend, not
-        // a bug here; the Input System path above reads them separately.
+        // presents over Bluetooth:
+        //
+        //   0 left X   1 left Y   3 right X   4 right Y   5 d-pad X   6 d-pad Y
+        //   8 left trigger        9 right trigger
+        //
+        // The triggers get an axis each, and this is worth being firm about. The 3rd axis
+        // carries BOTH of them combined, one positive and one negative, and that is the
+        // obvious thing to reach for — but WHICH trigger takes the positive sign is not
+        // fixed, it depends on the driver. Reading them off it got this exactly backwards
+        // on a real pad: aiming fired the gun and firing aimed it. Worse, a shared axis
+        // cannot represent both triggers at once, so pulling one while holding the other
+        // cancels them — which is precisely what aiming down the sights and then shooting
+        // is, the most ordinary thing anybody does with a controller in a shooter.
+        //
+        // Axes 8 and 9 each rest at 0 and travel to 1, independently, with nothing to
+        // guess. There is no fallback to the shared axis: one that cannot tell which
+        // trigger is which is the same coin flip somewhere quieter.
         //
         // Button numbers are XInput's too: 0 A, 1 B, 2 X, 3 Y, 4 LB, 5 RB, 6 View, 7 Menu,
         // 8 left stick, 9 right stick. KeyCode.JoystickButtonN needs no Input Manager entry,
@@ -200,8 +213,8 @@ namespace ZombieHouse.Player
         private static Vector2 Dpad =>
             new Vector2(Input.GetAxisRaw("PadDpadX"), Input.GetAxisRaw("PadDpadY"));
 
-        private static float LeftTrigger => Mathf.Max(0f, Input.GetAxisRaw("PadTriggers"));
-        private static float RightTrigger => Mathf.Max(0f, -Input.GetAxisRaw("PadTriggers"));
+        private static float LeftTrigger => Mathf.Clamp01(Input.GetAxisRaw("PadLeftTrigger"));
+        private static float RightTrigger => Mathf.Clamp01(Input.GetAxisRaw("PadRightTrigger"));
 
         private static bool South => Input.GetKeyDown(KeyCode.JoystickButton0);
         private static bool East => Input.GetKey(KeyCode.JoystickButton1);
@@ -245,6 +258,10 @@ namespace ZombieHouse.Player
             }
         }
 
+        // Right trigger shoots and left trigger aims, and nothing else on the pad does
+        // either. Deliberately not doubled up on the bumpers or the face buttons: a second
+        // way to fire is a second way to fire by accident, and both bumpers already have
+        // a weapon on them.
         public static bool FireHeld { get { Poll(); return _fireIs; } }
         public static bool FirePressed { get { Poll(); return _fireIs && !_fireWas; } }
         public static bool AimHeld { get { Poll(); return _aimIs; } }

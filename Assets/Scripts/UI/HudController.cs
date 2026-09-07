@@ -601,7 +601,11 @@ namespace ZombieHouse.UI
 
             bool show = GameManager.GameplayActive && Level.InteractPrompt.Active;
             _interactPrompt.enabled = show;
-            if (show) _interactPrompt.text = "SPACE   ·   " + Level.InteractPrompt.Label;
+            // Both keys, always, rather than swapping to whichever device was touched last.
+            // A prompt that changes under you is a prompt you have to read again, and this
+            // one appears at the moment you most want to act without reading — standing
+            // over a hostage with something coming down the corridor.
+            if (show) _interactPrompt.text = "SPACE  OR  X   ·   " + Level.InteractPrompt.Label;
         }
 
         private void UpdateDamageIndicators()

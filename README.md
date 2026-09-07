@@ -412,7 +412,7 @@ Re-run it any time to rebuild the scene from scratch.
 | Left Ctrl / C | Crouch (quiet, tighter aim) |
 | Q | Jump |
 | LMB | Fire current gun (Desert Eagle .50 in slot 1) |
-| **Space** | Act: lift the power cell, fit it, cut a hostage loose |
+| **Space** (or **X** on a pad) | Act: lift the power cell, fit it, cut a hostage loose |
 | E | Rifle — draws it if holstered, then fires it |
 | 1 / 2 / 3 | Select Desert Eagle / rifle / gatling gun directly |
 | **MMB (wheel click)** | Cycle pistol → rifle → gatling gun (→ Uzi, while you have one) |
@@ -492,11 +492,23 @@ that every axis `PadInput` reads is declared in `ProjectSettings/InputManager.as
 `InputReader.Move` reads the pad on every frame whether one is connected or not — so a single
 renamed axis would take the first frame of the game down for keyboard players too.
 
-The trigger mapping is the one place the input backend shows through. This project runs on the
-legacy Input Manager, where XInput reports both triggers on a single shared axis — left
-positive, right negative — so pulling both at once cancels them out. The Input System path in
-`PadInput` reads them separately and is what a future backend switch would use; the mapping
-above is identical either way.
+**Left trigger is the only way to aim on a pad, and right trigger the only way to shoot.**
+Neither is doubled up on a bumper or a face button: a second way to fire is a second way to
+fire by accident, and both bumpers already carry a weapon. The mouse still aims and fires as
+it always did — the two devices are merged, not exclusive.
+
+Getting that right took a second pass, and the reason is worth writing down. The legacy Input
+Manager's 3rd axis carries *both* triggers, one positive and one negative, and reading them
+off it is the obvious thing to do. It is wrong twice over. Which trigger takes the positive
+sign depends on the driver, so the first version shipped backwards on a real controller —
+aiming fired the gun and firing aimed it. And one axis physically cannot carry both triggers
+at once, so holding LT and then pulling RT cancels them: aiming down the sights and shooting,
+which is the most ordinary thing anybody does with a controller in a shooter.
+
+Windows also exposes each trigger on its own axis, the 9th and the 10th, each resting at 0 and
+travelling to 1. That is what `PadInput` reads. There is no fallback to the shared axis,
+because a fallback that cannot tell which trigger is which is the same coin flip somewhere
+quieter. `Test Gamepad` asserts the split.
 
 ### The Desert Eagle vs the rifle
 
