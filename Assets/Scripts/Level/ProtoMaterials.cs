@@ -244,6 +244,27 @@ namespace ZombieHouse.Level
         /// the cap cover: white once, and the only pale thing below decks
         public static Material OfficerCap => Get("officercap", new Color(0.74f, 0.74f, 0.71f), 0.18f, 0f);
 
+        // The gulls. A herring gull is white, grey-backed and black-tipped, and the only
+        // thing on this ship with any brightness left in it — which is exactly why they
+        // work: on a black deck the one pale shape you can see is the one coming at you.
+
+        /// body and head: white gone the colour of old paper
+        public static Material GullFeather => Get("gullfeather", new Color(0.78f, 0.78f, 0.75f), 0.09f, 0f);
+        /// the mantle over the back, and the wings
+        public static Material GullMantle => Get("gullmantle", new Color(0.46f, 0.49f, 0.53f), 0.10f, 0f);
+        /// black primaries at the wingtip
+        public static Material GullPrimary => Get("gullprimary", new Color(0.10f, 0.10f, 0.12f), 0.12f, 0f);
+        /// the beak
+        public static Material GullBeak => Get("gullbeak", new Color(0.74f, 0.60f, 0.12f), 0.30f, 0f);
+        /// and the red spot on it, the one warm colour on the whole bird
+        public static Material GullBeakSpot => Get("gullbeakspot", new Color(0.62f, 0.11f, 0.09f), 0.25f, 0f);
+        /// legs and feet
+        public static Material GullFoot => Get("gullfoot", new Color(0.66f, 0.56f, 0.44f), 0.22f, 0f);
+        /// the eye: nothing behind it, and lit, because a dead bird's eye at 2 a.m. is the
+        /// detail that makes a seagull frightening rather than funny
+        public static Material GullEye => GetEmissive("gulleye", new Color(0.72f, 0.68f, 0.55f),
+                                                      new Color(1.5f, 1.35f, 0.55f));
+
         // ---- Merryland ----------------------------------------------------
         // Sun-bleached rather than grimy. The park closed in the eighties and nobody
         // boarded it up; forty summers took the red out of everything and left the

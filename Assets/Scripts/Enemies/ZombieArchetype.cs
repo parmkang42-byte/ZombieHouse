@@ -22,7 +22,7 @@ namespace ZombieHouse.Enemies
         // The Cormorant. Not costumes this time but a crew, which is worse: the mascots
         // were people hiding inside something cheerful, and these are just men who were
         // working when it happened and have not stopped.
-        Deckhand, Officer
+        Deckhand, Officer, Gull
     }
 
     /// <summary>
@@ -582,6 +582,34 @@ namespace ZombieHouse.Enemies
                 HearingMultiplier = 1.15f,
                 Scale = 1.06f, SkinTint = new Color(0.90f, 0.95f, 0.94f),
                 StrideCyclesPerMetre = 0.66f, LurchDegrees = 4f
+            },
+            new ZombieArchetype
+            {
+                // THE GULL -- weight 0, because it is placed on a rail rather than drawn.
+                //
+                // Almost nothing on its own: forty health, and it hits for eight. What it
+                // costs you is attention. Every other enemy in this game arrives along the
+                // floor, so the player learns to read one plane and stops looking anywhere
+                // else; a gull comes down from outside that plane, screams first so it is
+                // never a cheap shot, and is gone again before you have finished turning.
+                //
+                // The rifle multiplier is up because the answer to a small fast thing at
+                // range is the accurate gun, and a shotgun-adjacent Desert Eagle should feel
+                // wrong here in the same way it feels right against the mascots.
+                //
+                // Speed and senses are mostly unread -- GullFlight owns the movement and
+                // there is no NavMeshAgent to give them to -- but SightRange is not: the
+                // flight uses it as the range it notices you from.
+                Kind = ZombieKind.Gull, Name = "Gull", Weight = 0f,
+                Health = 40f, StaggerResistance = 0.1f,
+                WanderSpeed = 0f, InvestigateSpeed = 0f, ChaseSpeed = 0f, TurnSpeed = 600f,
+                AttackDamage = 8f, AttackCooldown = 5.5f, AttackWindup = 0.65f,
+                AttackRange = 2f,
+                SightRange = 20f, FieldOfView = 300f, MemorySeconds = 6f,
+                HearingMultiplier = 0.4f,
+                RifleDamageMultiplier = 1.4f,
+                Scale = 1f, SkinTint = new Color(1f, 1f, 1f),
+                StrideCyclesPerMetre = 0f, LurchDegrees = 0f
             },
             new ZombieArchetype
             {

@@ -38,6 +38,7 @@ namespace ZombieHouse.EditorTools
         private const string ShipScenePath = ScenesFolder + "/Level8_Cormorant.unity";
         private const string SailorPrefabPath = PrefabsFolder + "/ZombieSailor.prefab";
         private const string OfficerPrefabPath = PrefabsFolder + "/ZombieOfficer.prefab";
+        private const string GullPrefabPath = PrefabsFolder + "/ZombieGull.prefab";
         private const string MascotMousePrefabPath = PrefabsFolder + "/MascotMouse.prefab";
         private const string MascotDogPrefabPath = PrefabsFolder + "/MascotDog.prefab";
         private const string MascotBowMousePrefabPath = PrefabsFolder + "/MascotBowMouse.prefab";
@@ -1240,11 +1241,13 @@ namespace ZombieHouse.EditorTools
             GameObject officerPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Officer,
                                                          OfficerPrefabPath);
 
+            GameObject gullPrefab = BuildGullPrefab(enemyLayer);
+
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             ConfigureShipLighting();
             GameObject player = BuildPlayerRig(playerLayer, enemyLayer);
-            BuildShipManagers(sailorPrefab, officerPrefab, player);
+            BuildShipManagers(sailorPrefab, officerPrefab, gullPrefab, player);
             ApplyPostFx(player, LevelMood.School);
 
             EditorSceneManager.MarkSceneDirty(scene);
@@ -1292,7 +1295,7 @@ namespace ZombieHouse.EditorTools
         }
 
         private static void BuildShipManagers(GameObject sailorPrefab, GameObject officerPrefab,
-                                              GameObject player)
+                                              GameObject gullPrefab, GameObject player)
         {
             var managers = new GameObject("--- Managers ---");
 
@@ -1353,6 +1356,15 @@ namespace ZombieHouse.EditorTools
             so.ApplyModifiedPropertiesWithoutUndo();
 
             ship.Generate();
+
+            // The gulls, on the rail stanchions, through the lurker slot — placed exactly
+            // where the level said rather than drawn against a marker, which is the whole
+            // difference between a gull and a walker that happens to be outdoors.
+            //
+            // 1.3 m of hover is the rail. The spawner still samples each perch onto the
+            // NavMesh first, which is what stops a perch over the water from becoming a bird
+            // hovering over the water; the lift only happens once there is deck underneath.
+            spawner.ConfigureLurkers(gullPrefab, ZombieKind.Gull, ship.PerchPositions, 1.3f);
         }
 
         [MenuItem("Zombie House/Verify Cormorant", false, 29)]
@@ -3968,6 +3980,174 @@ namespace ZombieHouse.EditorTools
             Debug.Log(problems == 0
                 ? "[Roster] PASS — the draw contains only what the level asked for."
                 : $"[Roster] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The gulls: that one can fly, and — the part that matters — that one cannot fail
+        /// to come back.
+        ///
+        /// This is the only creature in the game with no NavMeshAgent, so nothing outside
+        /// GullFlight is holding its position. That is a different class of risk from every
+        /// other enemy here. A walker whose state machine jams stands in a corridor and is
+        /// visibly broken; a bird whose state machine jams hangs in the air, looks exactly
+        /// like a bird circling, and nobody reports it. Then it is unkillable-looking,
+        /// permanently audible, and counted in a kill quota that can never be met.
+        ///
+        /// So the interesting assertions are all negative. Not "it dives" but "it cannot
+        /// stay up": the airborne budget is spent above the state machine rather than inside
+        /// it, and this drives the thing for a simulated minute to prove that holds.
+        /// </summary>
+        [MenuItem("Zombie House/Test Gulls", false, 50)]
+        public static void TestGulls()
+        {
+            int problems = 0;
+
+            GameObject bird = GullFactory.Create("TestGull");
+            bird.transform.position = new Vector3(0f, 1.3f, 0f);
+
+            var profile = bird.GetComponent<ZombieProfile>();
+            ZombieProfile.NextKindOverride = ZombieKind.Gull;
+            profile.Initialise();
+
+            var flight = bird.GetComponent<GullFlight>();
+
+            // Awake does not run in edit mode, so Home is never captured and every read of it
+            // is zero — a re-anchor would send the bird to the world origin and this whole
+            // test would be measuring nothing.
+            flight.Initialise();
+
+            Vector3 home = flight.Home;
+            Debug.Log($"[Gulls] Perched at {home}. Archetype: {profile.Archetype.Name}, " +
+                      $"{profile.Archetype.Health:0} hp, notices at {profile.Archetype.SightRange:0} m.");
+
+            // ---- it goes ----------------------------------------------------
+            // A target 9 m away on the same deck: inside the notice range, outside the
+            // minimum, and level with the perch.
+            Vector3 target = home + new Vector3(9f, 0f, 0f);
+
+            const float Step = 1f / 60f;
+            bool leftThePerch = false;
+
+            for (int i = 0; i < 240 && !leftThePerch; i++)
+            {
+                flight.Tick(Step, target);
+                if (!flight.IsPerched) leftThePerch = true;
+            }
+
+            if (!leftThePerch)
+            {
+                Debug.LogError("[Gulls] It never left the rail with the player 9 m away and in " +
+                               "the open. A gull that does not come at you is scenery.");
+                problems++;
+            }
+
+            // ---- and it comes back ------------------------------------------
+            float worstAirborne = 0f;
+            float worstDistance = 0f;
+
+            for (int i = 0; i < 3600; i++)   // a simulated minute at 60 fps
+            {
+                flight.Tick(Step, target);
+
+                worstAirborne = Mathf.Max(worstAirborne, flight.AirborneSeconds);
+                worstDistance = Mathf.Max(worstDistance,
+                                          Vector3.Distance(bird.transform.position, home));
+            }
+
+            Debug.Log($"[Gulls] One minute: {flight.Dives} dives, longest trip {worstAirborne:0.00} s, " +
+                      $"furthest from the rail {worstDistance:0.0} m, {flight.Rescues} rescue(s).");
+
+            if (flight.Dives < 3)
+            {
+                Debug.LogError($"[Gulls] Only {flight.Dives} dives in a minute — the cooldown has " +
+                               "made it ornamental.");
+                problems++;
+            }
+
+            // The hard budget is 6 s and a healthy dive-and-return is about 3. Anything at or
+            // over the budget means the timeout was doing the work the state machine should
+            // have done, which is the bug this whole design exists to make impossible.
+            if (worstAirborne >= 5f)
+            {
+                Debug.LogError($"[Gulls] Longest trip was {worstAirborne:0.00} s against a 6 s " +
+                               "budget — it is only coming down because the timeout makes it.");
+                problems++;
+            }
+
+            if (flight.Rescues > 0)
+            {
+                Debug.LogError($"[Gulls] The timeout fired {flight.Rescues} time(s) in normal " +
+                               "flight. It is a backstop, not a mechanism.");
+                problems++;
+            }
+
+            // It must end where it started, not somewhere it drifted to. Sixty seconds of
+            // arcs accumulating a few centimetres each would walk a gull off the ship.
+            float drift = Vector3.Distance(bird.transform.position, home);
+            if (!flight.IsPerched || drift > 0.01f)
+            {
+                Debug.LogError($"[Gulls] After a minute it is {drift:0.000} m from its perch and " +
+                               $"{(flight.IsPerched ? "perched" : "STILL FLYING")}.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Gulls] Back on the exact perch it started from, with no drift.");
+            }
+
+            // ---- it will not dive through the hull --------------------------
+            // Two decks down is 5.8 m. Without this check it dives at a player it cannot
+            // see or reach and hits them through the plating.
+            var below = new GameObject("Below").AddComponent<GullFlight>();
+            below.transform.position = home;
+            below.Initialise();
+
+            // Sampled every tick rather than at the end, which is not fussiness: when this
+            // check was first written it read the state once at the end, and a deliberately
+            // broken gull that HAD dived through the hull was sitting in its cooldown by
+            // then and the check passed. A negative assertion about behaviour has to watch
+            // the whole run, because the state you are looking for is transient.
+            bool wentAfterIt = false;
+
+            for (int i = 0; i < 600; i++)
+            {
+                below.Tick(Step, home + new Vector3(6f, -5.8f, 0f));
+                if (!below.IsPerched) wentAfterIt = true;
+            }
+
+            if (wentAfterIt)
+            {
+                Debug.LogError("[Gulls] It went after a player two decks below, through the hull.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Gulls] Ignores a player on another deck.");
+            }
+
+            // ---- and a dead one does not hang in the air --------------------
+            var corpse = bird.GetComponent<ZombieHealth>();
+            corpse.TakeDamage(new DamageInfo(500f, bird.transform.position, Vector3.up,
+                                             Vector3.up, null, false));
+
+            var deadBody = bird.GetComponent<Rigidbody>();
+            if (flight.enabled || deadBody.isKinematic || !deadBody.useGravity)
+            {
+                Debug.LogError("[Gulls] A dead gull is still kinematic with its flight running — " +
+                               "it will stop dead in mid-air where it was shot.");
+                problems++;
+            }
+            else
+            {
+                Debug.Log("[Gulls] A dead one drops.");
+            }
+
+            Object.DestroyImmediate(below.gameObject);
+            Object.DestroyImmediate(bird);
+
+            Debug.Log(problems == 0
+                ? "[Gulls] PASS — they come at you, they go back, and they cannot get stuck up there."
+                : $"[Gulls] FAIL — {problems} problem(s).");
         }
 
         /// <summary>
@@ -8765,6 +8945,18 @@ namespace ZombieHouse.EditorTools
             CreateMaterial("officerbraid", new Color(0.58f, 0.47f, 0.16f), 0.62f, 0.80f);
             CreateMaterial("officercap", new Color(0.74f, 0.74f, 0.71f), 0.18f, 0f);
 
+            // The gulls. Assets, for the same reason as everything above them.
+            CreateMaterial("gullfeather", new Color(0.78f, 0.78f, 0.75f), 0.09f, 0f);
+            CreateMaterial("gullmantle", new Color(0.46f, 0.49f, 0.53f), 0.10f, 0f);
+            CreateMaterial("gullprimary", new Color(0.10f, 0.10f, 0.12f), 0.12f, 0f);
+            CreateMaterial("gullbeak", new Color(0.74f, 0.60f, 0.12f), 0.30f, 0f);
+            CreateMaterial("gullbeakspot", new Color(0.62f, 0.11f, 0.09f), 0.25f, 0f);
+            CreateMaterial("gullfoot", new Color(0.66f, 0.56f, 0.44f), 0.22f, 0f);
+
+            Material gullEye = CreateMaterial("gulleye", new Color(0.72f, 0.68f, 0.55f), 0.4f, 0f);
+            ProtoMaterials.MakeEmissive(gullEye, new Color(1.5f, 1.35f, 0.55f));
+            EditorUtility.SetDirty(gullEye);
+
             CreateMaterial("deckplate", new Color(0.30f, 0.32f, 0.33f), 0.30f, 0.30f);
             CreateMaterial("deckplatealt", new Color(0.26f, 0.28f, 0.30f), 0.30f, 0.30f);
             CreateMaterial("hullplate", new Color(0.22f, 0.26f, 0.29f), 0.24f, 0.40f);
@@ -9020,6 +9212,20 @@ namespace ZombieHouse.EditorTools
             roster.arraySize = kinds.Length;
             for (int i = 0; i < kinds.Length; i++)
                 roster.GetArrayElementAtIndex(i).enumValueIndex = (int)kinds[i];
+        }
+
+        /// <summary>
+        /// The gull prefab. Its own builder rather than BuildSchoolPrefab's because a gull is
+        /// not a dressed humanoid — no agent, no AI, and a completely different skeleton.
+        /// </summary>
+        private static GameObject BuildGullPrefab(int enemyLayer)
+        {
+            GameObject temp = GullFactory.Create("Gull");
+            SetLayerRecursively(temp, enemyLayer);
+
+            GameObject prefab = PrefabUtility.SaveAsPrefabAsset(temp, GullPrefabPath);
+            Object.DestroyImmediate(temp);
+            return prefab;
         }
 
         private static GameObject BuildSchoolPrefab(int enemyLayer, ZombieOutfit outfit, string path)

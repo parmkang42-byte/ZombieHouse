@@ -37,7 +37,7 @@ namespace ZombieHouse.Level
     /// that file does is not wanted here. What is shared is the idea, not the code.
     /// </summary>
     [DefaultExecutionOrder(-100)]
-    public class ShipGenerator : MonoBehaviour, ILevelSource
+    public class ShipGenerator : MonoBehaviour, ILevelSource, ILurkerSource
     {
         [Header("Scale")]
         [SerializeField] private float cellSize = 2.2f;
@@ -212,6 +212,16 @@ namespace ZombieHouse.Level
 
         /// <summary>Where the gulls sit when they are not at you. Read by the spawner.</summary>
         public List<Vector3> PerchPositions { get; } = new List<Vector3>();
+
+        /// <summary>
+        /// The gulls, through the same slot the jungle's snakes use.
+        ///
+        /// Lurkers are the right shape for them and not by coincidence: a lurker is placed
+        /// exactly where the level said rather than drawn against a spawn marker, and a gull
+        /// on a rail stanchion is precisely that kind of fact. One that had wandered in off a
+        /// random marker would be standing on the deck, which is not what a gull does.
+        /// </summary>
+        public List<Vector3> LurkerSpawns => PerchPositions;
 
         /// <summary>One companionway, as the verify needs to see it.</summary>
         public struct Companionway

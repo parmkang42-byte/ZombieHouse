@@ -33,6 +33,12 @@ namespace ZombieHouse.Enemies
         [SerializeField] private ZombieKind lurkerKind = ZombieKind.Snake;
         [SerializeField] private List<Vector3> lurkerPositions = new List<Vector3>();
 
+        [Tooltip("Lifts each lurker this far above the walkable ground it was matched to. "
+                 + "Zero for anything that lies on the floor, which is every lurker before "
+                 + "the gulls; the ship sets it so they end up on the rail rather than "
+                 + "standing on the deck under it.")]
+        [SerializeField] private float lurkerHoverHeight;
+
         [Header("Packs")]
         [Tooltip("A type that arrives in groups rather than singly. The school's children "
                  + "use this: a classroom door opening produces three of them at once, "
@@ -132,10 +138,12 @@ namespace ZombieHouse.Enemies
         /// spawn markers. These are additional to the population — a level with twelve
         /// markers and nine lurkers has twenty-one things in it.
         /// </summary>
-        public void ConfigureLurkers(GameObject prefab, ZombieKind kind, IEnumerable<Vector3> positions)
+        public void ConfigureLurkers(GameObject prefab, ZombieKind kind, IEnumerable<Vector3> positions,
+                                    float hoverHeight = 0f)
         {
             lurkerPrefab = prefab;
             lurkerKind = kind;
+            lurkerHoverHeight = hoverHeight;
 
             SetLurkerPositions(positions);
         }
@@ -307,7 +315,13 @@ namespace ZombieHouse.Enemies
 
                 ZombieProfile.NextKindOverride = lurkerKind;
 
-                var lurker = Instantiate(lurkerPrefab, hit.position,
+                // Sampled onto the mesh to prove there is deck under it, then lifted back
+                // up. The sample is the safety check — it is what stops a perch position
+                // over the sea from becoming a gull hovering over the sea — and the lift is
+                // what puts the bird on the rail instead of standing beneath it.
+                Vector3 placeAt = hit.position + Vector3.up * lurkerHoverHeight;
+
+                var lurker = Instantiate(lurkerPrefab, placeAt,
                     Quaternion.Euler(0f, Random.Range(0f, 360f), 0f));
                 lurker.name = lurkerKind + "_" + i;
 
