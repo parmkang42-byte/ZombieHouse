@@ -444,6 +444,60 @@ hostage loose. It used to fire the rifle; the rifle moved to **E**, which the ac
 vacated. One key, one job, and no context-sensitive guessing about which you meant. All of
 it is one line each in `InputReader` if you want it elsewhere.
 
+### A wireless controller
+
+Plug one in, or pair it over Bluetooth, and it works. There is no controller mode and nothing
+to turn on: the keyboard, the mouse and the pad are all live at once, so you can put the pad
+down mid-fight and reach for the mouse without touching a menu.
+
+| Pad | Action |
+|---|---|
+| Left stick | Move |
+| Right stick | Look |
+| Right trigger | Fire |
+| Left trigger | Aim down sights |
+| Right bumper | Swing katana |
+| Left bumper | Rifle |
+| A | Jump |
+| X | Act — lift the cell, fit it, cut a hostage loose |
+| Y | Reload |
+| B (hold) | Crouch |
+| Left stick click | Hold to sprint |
+| Right stick click | Cycle weapons |
+| D-pad ← ↑ → | Desert Eagle / rifle / gatling gun |
+| D-pad ↓ | Torch |
+| Menu / Start | Pause |
+| View / Back | Restart after win/lose |
+
+A stick is not a mouse and the difference is not cosmetic. A mouse reports how far it has
+already moved; a stick reports how far it is being held, which is a request to keep turning.
+So the look stick is scaled by time rather than by frame — otherwise aiming would be faster on
+a faster machine — and it is shaped twice before it gets there:
+
+- **The deadzone is round.** Unity's own `dead` setting is per-axis, which cuts a square hole
+  out of a round stick: push diagonally and both axes clear their deadzone at once, so the
+  diagonals become the easiest direction to move and straight lines the hardest. The axes are
+  declared with `dead: 0` and `PadInput` does it on the vector instead.
+- **And it is continuous.** Zeroing everything below the threshold and passing the rest
+  through unchanged makes the stick jump from nothing to 16% the instant it crosses. The
+  magnitude is rescaled from the deadzone edge, so it starts at zero and reaches one at full
+  deflection.
+- **The look response is squared.** Most aiming happens with the stick barely off centre, and
+  a linear stick spends nearly all its travel at speeds too fast to place a shot with. Half
+  deflection gives a quarter of the turn rate; full deflection still gives all of it.
+
+`Test Gamepad` checks all of that without a controller attached, and checks one more thing:
+that every axis `PadInput` reads is declared in `ProjectSettings/InputManager.asset`.
+`Input.GetAxisRaw` **throws** on an undeclared name rather than returning zero, and
+`InputReader.Move` reads the pad on every frame whether one is connected or not — so a single
+renamed axis would take the first frame of the game down for keyboard players too.
+
+The trigger mapping is the one place the input backend shows through. This project runs on the
+legacy Input Manager, where XInput reports both triggers on a single shared axis — left
+positive, right negative — so pulling both at once cancels them out. The Input System path in
+`PadInput` reads them separately and is what a future backend switch would use; the mapping
+above is identical either way.
+
 ### The Desert Eagle vs the rifle
 
 The sidearm is a **Desert Eagle .50**: **125** damage, a **7-round** magazine and a 0.42 s

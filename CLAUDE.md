@@ -102,6 +102,13 @@ outfit's body. The roster is a static and outlives a scene load, so `LevelDirect
 clears it when the list is empty — a level that inherits the last one's roster is the same
 bug wearing a different hat.
 
+**Every axis `PadInput` names must exist in `ProjectSettings/InputManager.asset`.**
+`Input.GetAxisRaw` throws on an undeclared axis instead of returning zero, and
+`InputReader.Move` reads the pad every frame whether one is connected or not — so a renamed
+axis is not a broken controller, it is a game that dies on its first frame for everybody.
+`Test Gamepad` cross-checks `PadInput.AxisNames` against that file. The axes are declared with
+`dead: 0` on purpose: Unity's per-axis deadzone is square, and `PadInput` applies a radial one.
+
 ---
 
 ## Running Unity headlessly
@@ -147,7 +154,8 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`. All print PASS/FAIL.
+The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
 

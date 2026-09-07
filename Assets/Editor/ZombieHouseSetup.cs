@@ -3971,6 +3971,136 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>
+        /// The controller: that its axes exist, and that its sticks are shaped correctly.
+        ///
+        /// No pad is required and none is used. What is checked is the arithmetic and the
+        /// project settings, which is where a controller goes wrong silently — a mapping
+        /// mistake is obvious the first time you press the button, and a deadzone mistake is
+        /// something a player can only describe as "it feels floaty".
+        /// </summary>
+        [MenuItem("Zombie House/Test Gamepad", false, 48)]
+        public static void TestGamepad()
+        {
+            int problems = 0;
+
+            // ---- every axis the code reads is declared ----------------------
+            // Input.GetAxisRaw throws on an undeclared name. InputReader.Move reads the pad
+            // on every frame whether one is plugged in or not, so a missing axis is not a
+            // broken controller, it is a broken game.
+            string settings = System.IO.File.ReadAllText("ProjectSettings/InputManager.asset");
+
+            foreach (string axis in ZombieHouse.Player.PadInput.AxisNames)
+            {
+                if (settings.Contains("m_Name: " + axis)) continue;
+
+                Debug.LogError($"[Gamepad] PadInput reads '{axis}' and the Input Manager does not " +
+                               "declare it. GetAxisRaw throws on an unknown axis, so this takes " +
+                               "the first frame of the game down for everybody, not just for pad users.");
+                problems++;
+            }
+
+            if (problems == 0)
+            {
+                Debug.Log($"[Gamepad] All {ZombieHouse.Player.PadInput.AxisNames.Length} pad axes " +
+                          "are declared in the Input Manager.");
+            }
+
+            // ---- a centred stick is centred ---------------------------------
+            // Sticks do not rest at zero. A worn one can sit at 0.1 in some direction, and
+            // without a deadzone the view drifts on its own forever.
+            Vector2 resting = ZombieHouse.Player.PadInput.ApplyDeadzone(new Vector2(0.09f, -0.06f), 0.16f);
+            if (resting != Vector2.zero)
+            {
+                Debug.LogError($"[Gamepad] A stick resting at 0.11 produced {resting}, so the view drifts.");
+                problems++;
+            }
+
+            // ---- and the deadzone is round, not square ----------------------
+            // This is the one Unity's own `dead` field gets wrong. A per-axis deadzone of
+            // 0.16 passes (0.15, 0.15) as zero on both axes while a radial one sees a stick
+            // pushed to 0.21 — so on a square deadzone the diagonals are the last direction
+            // to respond and every straight line feels different from every diagonal.
+            Vector2 diagonal = ZombieHouse.Player.PadInput.ApplyDeadzone(new Vector2(0.15f, 0.15f), 0.16f);
+            if (diagonal == Vector2.zero)
+            {
+                Debug.LogError("[Gamepad] The deadzone is square: a stick pushed to 0.21 diagonally " +
+                               "reads as centred, so diagonals respond later than straight lines.");
+                problems++;
+            }
+
+            // ---- it starts from zero at the edge ----------------------------
+            // Just outside the deadzone the output must be near zero, not near the deadzone
+            // value. Subtracting without rescaling gives a stick that snaps to 16% the
+            // instant it crosses, which reads as a stick with a hair trigger.
+            float justOutside = ZombieHouse.Player.PadInput
+                .ApplyDeadzone(new Vector2(0.17f, 0f), 0.16f).magnitude;
+
+            if (justOutside > 0.05f)
+            {
+                Debug.LogError($"[Gamepad] Crossing the deadzone jumps straight to {justOutside:0.000} " +
+                               "instead of easing up from nothing.");
+                problems++;
+            }
+
+            // ---- and reaches full at full deflection ------------------------
+            // A curve that tops out below 1 caps the turn rate below the authored one, and
+            // nothing says so except that the game feels slow to turn.
+            float full = ZombieHouse.Player.PadInput
+                .ApplyDeadzone(new Vector2(0f, 1f), 0.16f).magnitude;
+
+            if (Mathf.Abs(full - 1f) > 0.001f)
+            {
+                Debug.LogError($"[Gamepad] A fully deflected stick reads {full:0.000}, not 1.");
+                problems++;
+            }
+
+            // ---- monotonic, and the direction survives ----------------------
+            // Pushing further must never give less, and shaping must not bend the stick:
+            // a curve applied per-axis rotates diagonals towards the nearest axis, so the
+            // player aims where they did not point.
+            float previous = -1f;
+            for (int i = 0; i <= 20; i++)
+            {
+                float t = i / 20f;
+                float magnitude = ZombieHouse.Player.PadInput.ShapeLook(new Vector2(0f, t)).magnitude;
+
+                if (magnitude < previous - 0.0001f)
+                {
+                    Debug.LogError($"[Gamepad] Pushing the stick from {previous:0.00} further gave less.");
+                    problems++;
+                    break;
+                }
+
+                previous = magnitude;
+            }
+
+            Vector2 shaped = ZombieHouse.Player.PadInput.ShapeLook(new Vector2(0.7f, 0.7f));
+            if (shaped != Vector2.zero && Mathf.Abs(shaped.x - shaped.y) > 0.0001f)
+            {
+                Debug.LogError($"[Gamepad] Shaping bent a 45° push to {shaped} — the aim goes " +
+                               "somewhere other than where the stick points.");
+                problems++;
+            }
+
+            // ---- the curve is a curve ---------------------------------------
+            // Half deflection should give clearly less than half rate, which is the whole
+            // point of squaring it: fine control near the centre where the aiming happens.
+            float half = ZombieHouse.Player.PadInput.ShapeLook(new Vector2(0f, 0.58f)).magnitude;
+            Debug.Log($"[Gamepad] Half-deflected look stick returns {half:0.00} of full rate.");
+
+            if (half > 0.35f)
+            {
+                Debug.LogError("[Gamepad] The look response is effectively linear, so there is no " +
+                               "precision near the centre.");
+                problems++;
+            }
+
+            Debug.Log(problems == 0
+                ? "[Gamepad] PASS — axes declared, deadzone round and continuous, curve monotonic."
+                : $"[Gamepad] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
         /// The crew: that the clothes are on the right bones, and that none of them is solid.
         ///
         /// The second half is the one worth having. CreatePart strips the collider from any
