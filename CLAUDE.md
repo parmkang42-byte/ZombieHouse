@@ -289,7 +289,13 @@ Add its materials to `CreatePlaceholderMaterials` in `ZombieHouseSetup`, **not j
 `ProtoMaterials`**. `ProtoMaterials.Get` silently falls back to an in-memory material when the
 `.mat` asset is missing, and an in-memory material does not survive being saved into a prefab
 — the prefab ships with a dangling reference and renders **magenta**. The jungle's snakes,
-jaguars and monkeys all shipped pink this way.
+jaguars and monkeys all shipped pink this way, and so did both of the Cormorant's sailors:
+38 null references across the two, from a rule that was already written down right here.
+
+`Test Prefab Materials` now checks the symptom rather than the rule — every renderer in every
+prefab under `Assets/Prefabs` must have a material. Run it after adding any creature. It looks
+at the saved asset, not the object in memory, because the creature is *correct* in memory at
+the moment it is built; that is the whole trap.
 
 Quadrupeds reuse the humanoid bone names on purpose (front legs are "arms") so `ZombieRagdoll`
 and `ZombieDismemberment` work unchanged. Even the snake gets four vestigial leg stubs buried

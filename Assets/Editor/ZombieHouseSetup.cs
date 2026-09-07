@@ -3971,6 +3971,77 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>
+        /// No prefab may contain a renderer with no material.
+        ///
+        /// This is the magenta bug, and it has now shipped three times: the jungle's snakes,
+        /// jaguars and monkeys, and then both of the Cormorant's sailors. The cause is always
+        /// the same and is written down in CLAUDE.md — a material added to ProtoMaterials but
+        /// not to CreatePlaceholderMaterials has no .mat asset, so ProtoMaterials.Get hands
+        /// back an in-memory material, and an in-memory material does not survive being saved
+        /// into a prefab. The reference lands null and Unity draws null bright pink.
+        ///
+        /// Writing the rule down did not stop it happening a third time, so this checks the
+        /// symptom instead: a renderer with no material, in any prefab. One line, and it
+        /// covers every creature anyone adds from here rather than one list of colours.
+        ///
+        /// It looks at the prefab on disk on purpose. The creature is correct in memory at
+        /// the moment it is built — that is the entire trap — and only the saved asset shows
+        /// the damage.
+        /// </summary>
+        [MenuItem("Zombie House/Test Prefab Materials", false, 49)]
+        public static void TestPrefabMaterials()
+        {
+            int problems = 0;
+            int prefabs = 0;
+            int renderers = 0;
+
+            string[] guids = AssetDatabase.FindAssets("t:Prefab", new[] { PrefabsFolder });
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null) continue;
+
+                prefabs++;
+                int missing = 0;
+
+                foreach (Renderer renderer in prefab.GetComponentsInChildren<Renderer>(true))
+                {
+                    renderers++;
+
+                    foreach (Material material in renderer.sharedMaterials)
+                    {
+                        if (material != null) continue;
+
+                        if (missing == 0)
+                        {
+                            Debug.LogError($"[Materials] {System.IO.Path.GetFileName(path)} has " +
+                                           $"renderers with no material — starting with " +
+                                           $"'{renderer.name}'. It renders magenta. The material " +
+                                           "is in ProtoMaterials and not in CreatePlaceholderMaterials, " +
+                                           "so it has no .mat asset to point at.");
+                        }
+
+                        missing++;
+                    }
+                }
+
+                if (missing == 0) continue;
+
+                Debug.LogError($"[Materials] {System.IO.Path.GetFileName(path)}: {missing} null " +
+                               "material reference(s).");
+                problems++;
+            }
+
+            Debug.Log($"[Materials] {prefabs} prefabs, {renderers} renderers checked.");
+
+            Debug.Log(problems == 0
+                ? "[Materials] PASS — every renderer in every prefab has a material."
+                : $"[Materials] FAIL — {problems} prefab(s) render magenta.");
+        }
+
+        /// <summary>
         /// The controller: that its axes exist, and that its sticks are shaped correctly.
         ///
         /// No pad is required and none is used. What is checked is the arithmetic and the
@@ -8680,6 +8751,20 @@ namespace ZombieHouse.EditorTools
 
             // The snake: banded scales with a wet sheen.
             // ---- The Cormorant. Assets, not just properties — see the note below.
+            //
+            // The crew's eight were left out when they were written, and both sailor prefabs
+            // shipped with 17 null material references: bright pink from the neck down. The
+            // note below said exactly this would happen. Test Prefab Materials now checks it
+            // rather than trusting anyone to remember.
+            CreateMaterial("oilskin", new Color(0.46f, 0.42f, 0.13f), 0.44f, 0.05f);
+            CreateMaterial("oilskindark", new Color(0.30f, 0.27f, 0.09f), 0.40f, 0.05f);
+            CreateMaterial("souwester", new Color(0.41f, 0.37f, 0.11f), 0.55f, 0.05f);
+            CreateMaterial("wader", new Color(0.07f, 0.07f, 0.08f), 0.36f, 0.05f);
+            CreateMaterial("lifevest", new Color(0.62f, 0.27f, 0.06f), 0.14f, 0f);
+            CreateMaterial("officercoat", new Color(0.10f, 0.13f, 0.20f), 0.16f, 0.05f);
+            CreateMaterial("officerbraid", new Color(0.58f, 0.47f, 0.16f), 0.62f, 0.80f);
+            CreateMaterial("officercap", new Color(0.74f, 0.74f, 0.71f), 0.18f, 0f);
+
             CreateMaterial("deckplate", new Color(0.30f, 0.32f, 0.33f), 0.30f, 0.30f);
             CreateMaterial("deckplatealt", new Color(0.26f, 0.28f, 0.30f), 0.30f, 0.30f);
             CreateMaterial("hullplate", new Color(0.22f, 0.26f, 0.29f), 0.24f, 0.40f);
