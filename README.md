@@ -392,6 +392,60 @@ sticks and the melody stops dead for a bar. It is in a major key on purpose — 
 an abandoned park is just sad, whereas a cheerful one is indifferent, and indifference is
 what makes a place feel like it does not need you.
 
+### Level 8 — The Cormorant
+
+A freighter dead in the water, four decks deep. `Build Level 8 Cormorant` / `Verify
+Cormorant`.
+
+The first level in this game that runs vertically. Everything else is a walk from one end of
+a place to the other; this is a climb, and the route crosses itself, so the way back is
+through rooms you already emptied. You start hard against the stern plating at the bottom of
+the hold, the power cell is below you in the engine room, and the davit — the way off — is at
+the bow three decks up.
+
+Getting four decks to *connect* was most of the work and none of it was visible. Two pieces
+of arithmetic were wrong and the level looked completely correct with both: single-cell
+companionways gave 0.875 m steps against the baker's 0.45 m climb limit, so all four decks
+baked perfectly and not one of them joined another — four separate islands. Widening the runs
+to four cells fixed the rise and broke the tread instead, eroding it to nothing under the
+agent's own radius. Both numbers now come from the agent's limits rather than from a guess.
+
+**Deckhands** carry the level. Oilskins over a life vest and a sou'wester still fastened
+under the chin — slower and tougher than a shambler, which is a manageable problem in a
+mansion and a different problem entirely in a corridor two metres wide with nowhere to back
+away to.
+
+**Officers** are about a quarter of the crew: a bridge coat, cuff braid, and a white cap. No
+more dangerous in a straight fight, but fast enough that a companionway does not buy you the
+time you thought it did. The cap is the point — on a ship lit by a handful of working lamps,
+one silhouette paler than the others tells you which one is about to close.
+
+**The gulls** sit on the rail stanchions of the weather deck. Forty health and eight damage,
+which is almost nothing; what they cost is attention. Every other enemy in this game arrives
+along the floor, so you learn to read one plane and stop looking anywhere else. A gull comes
+from outside that plane. It screams first, so it is never a cheap shot, and it commits to
+where you were when it screamed rather than tracking you — stepping aside works, standing
+still does not. They will not dive at you through the hull.
+
+**The Bosun** waits by the davit, so reaching the boat means going through him. He fights on
+the open weather deck and he has to: the deckhead below is 2.6 m, which caps an indoor boss
+at about 1.4x, and 1.4x is not a boss, it is a large man. Above deck there is nothing
+overhead at all, so he is 2.6x — about 4.6 m, and the only thing in this level you look up
+at. His reach is a marlinspike at 3.6 m, the same lesson the janitor's mop teaches.
+
+The ship's bed is **Dead Calm**, and it took until build 4 to earn it — the level had been
+borrowing the tomb's, which is the closest thing in the bank to a steel box underwater and
+wrong in one way that turns out to be the whole level. A tomb is *still*. Nothing in it has
+moved in three thousand years and nothing is going to. A ship is never still, and the
+Cormorant is not adrift in the sense of stopped: it is under way, rolling, working its
+plates. So the bed is built on an eleven-second swell rather than a pulse, the creaks fall at
+the top and bottom of the roll because that is when a hull carries load, and the drone stays
+on E while the progression underneath it does not. You cannot tap along to it and you can
+feel exactly when the next roll is due.
+
+No bell. A ship's bell is the obvious sound to reach for and it is wrong twice over: it is a
+sound a *crew* makes, and the crew is what is missing.
+
 ## Getting it running
 
 1. Open Unity Hub → **Add** → select this folder → open with 6000.5.8f1.

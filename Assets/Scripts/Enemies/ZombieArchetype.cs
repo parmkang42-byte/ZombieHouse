@@ -22,7 +22,7 @@ namespace ZombieHouse.Enemies
         // The Cormorant. Not costumes this time but a crew, which is worse: the mascots
         // were people hiding inside something cheerful, and these are just men who were
         // working when it happened and have not stopped.
-        Deckhand, Officer, Gull
+        Deckhand, Officer, Gull, BossBosun
     }
 
     /// <summary>
@@ -582,6 +582,34 @@ namespace ZombieHouse.Enemies
                 HearingMultiplier = 1.15f,
                 Scale = 1.06f, SkinTint = new Color(0.90f, 0.95f, 0.94f),
                 StrideCyclesPerMetre = 0.66f, LurchDegrees = 4f
+            },
+            new ZombieArchetype
+            {
+                // THE BOSUN -- the man who ran the deck, and still does.
+                //
+                // He fights on the weather deck and he has to: the deckhead below is 2.6 m,
+                // which caps an indoor boss at about 1.4x, and 1.4x is not a boss, it is a
+                // large man. Above deck there is nothing overhead at all, so he is 2.6x --
+                // about 4.6 m -- and the only enemy in this level you have to look up at.
+                // Test Boss measures that on a real built body rather than trusting it.
+                //
+                // Slower than the officer he was promoted past, and much harder to stagger:
+                // the whole fight is that the weather deck is open and there is nowhere on
+                // it he cannot follow you. The rails are the only cover and he goes through
+                // them.
+                //
+                // Reach of 3.6 m is the marlinspike. Same lesson as the janitor's mop and
+                // Dilly Dog's arms -- being hit from further away than you judged is worse
+                // than being hit harder.
+                Kind = ZombieKind.BossBosun, Name = "The Bosun", Weight = 0f,
+                Health = 4150f, StaggerResistance = 0.87f,
+                WanderSpeed = 0.7f, InvestigateSpeed = 2.1f, ChaseSpeed = 4.4f, TurnSpeed = 105f,
+                AttackDamage = 33f, AttackCooldown = 1.9f, AttackWindup = 0.62f,
+                AttackRange = 3.6f,
+                SightRange = 30f, FieldOfView = 120f, MemorySeconds = 40f,
+                HearingMultiplier = 1.2f,
+                Scale = 2.6f, SkinTint = new Color(0.88f, 0.94f, 0.92f),
+                StrideCyclesPerMetre = 0.30f, LurchDegrees = 8f
             },
             new ZombieArchetype
             {

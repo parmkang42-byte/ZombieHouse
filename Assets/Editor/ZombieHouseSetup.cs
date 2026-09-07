@@ -1306,11 +1306,12 @@ namespace ZombieHouse.EditorTools
             audioObject.AddComponent<ZombieHouse.Audio.ThreatMeter>();
             audioObject.AddComponent<ZombieHouse.Fx.DreadDirector>();
 
-            // Its own bed comes in step 4 of the plan. Until then it borrows the tomb's,
-            // which is the closest thing already in the bank to a steel box underwater.
+            // Its own bed at last. It had been borrowing the tomb's, which was the closest
+            // thing in the bank to a steel box underwater and wrong in one way that turns
+            // out to be the level: a tomb is still, and a ship is never still.
             var audioSo = new SerializedObject(shipAudio);
-            audioSo.FindProperty("musicTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.MusicTomb;
-            audioSo.FindProperty("tensionTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.TensionTomb;
+            audioSo.FindProperty("musicTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.MusicShip;
+            audioSo.FindProperty("tensionTrack").enumValueIndex = (int)ZombieHouse.Audio.Sfx.TensionShip;
             audioSo.ApplyModifiedPropertiesWithoutUndo();
 
             var gameManagerObject = new GameObject("GameManager");
@@ -1353,6 +1354,15 @@ namespace ZombieHouse.EditorTools
             // the slot above, which forces their kind, so listing them here as well would let
             // an officer's statistics turn up inside a deckhand's oilskins.
             SetRoster(so, ZombieKind.Deckhand);
+
+            // THE BOSUN, on the officer's own prefab at 2.6x. He waits by the davit, which
+            // is the way off the ship, so reaching the boat means going through him.
+            //
+            // Above deck on purpose and not for flavour: the deckhead below is 2.6 m, which
+            // caps an indoor boss near 1.4x, and 1.4x is a large man rather than a boss. The
+            // weather deck has nothing over it at all.
+            AssignReference(so, "bossPrefab", officerPrefab);
+            so.FindProperty("bossKind").enumValueIndex = (int)ZombieKind.BossBosun;
             so.ApplyModifiedPropertiesWithoutUndo();
 
             ship.Generate();
@@ -3516,7 +3526,7 @@ namespace ZombieHouse.EditorTools
             problems += CheckEveryLevelHasABoss();
 
             Debug.Log(problems == 0
-                ? "[Boss] PASS — six giants, each guarding its own level's exit."
+                ? $"[Boss] PASS — {CheckedLevels} giants, each guarding its own level's exit."
                 : $"[Boss] FAIL — {problems} problem(s).");
         }
 
@@ -3718,6 +3728,15 @@ namespace ZombieHouse.EditorTools
             return 0;
         }
 
+        /// <summary>
+        /// How many levels the boss table covers, reported in the summary line.
+        ///
+        /// Counted from the table rather than typed into the sentence. It read "six giants"
+        /// while the table held eight, which is the exact failure CLAUDE.md asks a summary
+        /// count to catch — so the count itself must not be the thing that goes stale.
+        /// </summary>
+        private static int CheckedLevels { get; set; }
+
         /// <summary>Every level's director actually got a boss prefab and a kind.</summary>
         private static int CheckEveryLevelHasABoss()
         {
@@ -3730,7 +3749,10 @@ namespace ZombieHouse.EditorTools
                 ("Pyramid", PyramidScenePath, ZombieKind.BossScarab),
                 ("Jungle", JungleScenePath, ZombieKind.BossJaguar),
                 ("Merryland", MerrylandScenePath, ZombieKind.BossMascot),
+                ("Cormorant", ShipScenePath, ZombieKind.BossBosun),
             };
+
+            CheckedLevels = levels.Length;
 
             int problems = 0;
 
@@ -5572,7 +5594,7 @@ namespace ZombieHouse.EditorTools
             {
                 ("Verify", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
                 ("School", SchoolScenePath), ("Pyramid", PyramidScenePath), ("Jungle", JungleScenePath),
-                ("Merryland", MerrylandScenePath),
+                ("Merryland", MerrylandScenePath), ("Cormorant", ShipScenePath),
             };
 
             foreach (var level in levels)
@@ -5646,6 +5668,7 @@ namespace ZombieHouse.EditorTools
                 new { Name = "Tomb",   Bed = ZombieHouse.Audio.Sfx.MusicTomb,   Tension = ZombieHouse.Audio.Sfx.TensionTomb,    Seconds = 64f },
                 new { Name = "Jungle", Bed = ZombieHouse.Audio.Sfx.MusicJungle, Tension = ZombieHouse.Audio.Sfx.TensionJungle,  Seconds = 72f },
                 new { Name = "Merryland", Bed = ZombieHouse.Audio.Sfx.MusicPark, Tension = ZombieHouse.Audio.Sfx.TensionPark, Seconds = 60f },
+                new { Name = "Cormorant", Bed = ZombieHouse.Audio.Sfx.MusicShip, Tension = ZombieHouse.Audio.Sfx.TensionShip, Seconds = 56f },
             };
 
             var fingerprints = new List<KeyValuePair<string, float>>();
@@ -5702,7 +5725,7 @@ namespace ZombieHouse.EditorTools
                           $"tension {tension.length:0}s RMS {tensionRms:0.000}.");
             }
 
-            // Six distinct beds. Compared on a cheap spectral-ish signature rather than
+            // Eight distinct beds. Compared on a cheap spectral-ish signature rather than
             // sample-by-sample, because two clips can differ in noise and still be the
             // same piece of music.
             for (int a = 0; a < fingerprints.Count; a++)
@@ -5720,7 +5743,7 @@ namespace ZombieHouse.EditorTools
             problems += CheckDreadPrimitives();
 
             Debug.Log(problems == 0
-                ? "[Music] PASS — seven distinct beds, layers length-matched, nothing silent or crushed."
+                ? "[Music] PASS — eight distinct beds, layers length-matched, nothing silent or crushed."
                 : $"[Music] FAIL — {problems} problem(s).");
         }
 

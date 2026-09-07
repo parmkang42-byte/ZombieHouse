@@ -39,7 +39,11 @@ namespace ZombieHouse.Audio
 
         // Merryland's voices. The suits are the ordinary groan heard through foam; the
         // squeak is the toy in the paw; the princess is not muffled at all.
-        MascotGroan, MascotSqueak, PrincessCall
+        MascotGroan, MascotSqueak, PrincessCall,
+
+        // The Cormorant. Appended, like everything above it — the six levels that are not
+        // being rebuilt keep the indices they were saved with.
+        MusicShip, TensionShip
     }
 
     /// <summary>
@@ -135,6 +139,9 @@ namespace ZombieHouse.Audio
 
                 { Sfx.MusicBoss,      new[] { SomethingEnormous(rng) } },
                 { Sfx.TensionBoss,    new[] { Tension(32f, 36.71f, 1.6f, rng) } },
+
+                { Sfx.MusicShip,      new[] { DeadCalm(rng) } },
+                { Sfx.TensionShip,    new[] { Tension(56f, 41.20f, 1.35f, rng) } },
 
                 { Sfx.MascotGroan,    Many(3, i => MascotGroan(rng, i)) },
                 { Sfx.MascotSqueak,   Many(2, i => MascotSqueak(rng, i)) },
@@ -2417,6 +2424,102 @@ namespace ZombieHouse.Audio
         }
 
         /// <summary>Timber under heat: a slow rising groan that stops rather than ends.</summary>
+        /// <summary>
+        /// The Cormorant: 56 seconds of a ship that is still moving with nobody steering.
+        ///
+        /// It had been playing the tomb's bed, which was a sound placeholder — a steel box
+        /// underwater is the closest thing in the bank to a stone one underground — and is
+        /// wrong in one specific way that turns out to be the whole level. A tomb is *still*.
+        /// Nothing in it has moved for three thousand years and nothing is going to. A ship
+        /// is never still, and the Cormorant is not adrift in the sense of stopped: it is
+        /// under way, rolling, working its plates, and every one of those sounds is something
+        /// mechanical happening on its own.
+        ///
+        /// So the bed is built on a period rather than a pulse. The swell is about eleven
+        /// seconds long, everything else hangs off it, and the creaks come at the top and
+        /// bottom of the roll because that is when a hull is loaded. You cannot tap along to
+        /// it and you can absolutely feel when the next one is due, which is a worse thing to
+        /// be able to do.
+        ///
+        /// No bell. A ship's bell is the most obvious sound available here and it is the
+        /// wrong one twice: it is a sound a *crew* makes, and the crew is what is missing.
+        /// </summary>
+        private static AudioClip DeadCalm(System.Random rng)
+        {
+            const float length = 56f;
+            const float swell = 11.2f;      // one roll, and the period everything else uses
+            var mix = Buffer(length);
+
+            // --- the hull ----------------------------------------------------
+            // E1 with a second oscillator a fifth of a hertz off it, so the two beat against
+            // each other about every five seconds. Same trick as the tomb's drone, tuned so
+            // the beat falls at roughly half the swell — the room breathes twice per roll.
+            var drone = Buffer(length);
+            AddSine(drone, 41.20f, 41.20f, 0.52f);
+            AddSine(drone, 41.42f, 41.42f, 0.48f);
+            AddSine(drone, 82.41f, 82.41f, 0.16f);
+            AddSine(drone, 61.74f, 61.74f, 0.10f);   // B1, the empty fifth over it
+            ApplyEnvelope(drone, 6f, 6f);
+            Mix(mix, drone, 1f);
+
+            // --- the roll ------------------------------------------------------
+            // Sub drops on the swell period. This is the ship going over, and on a laptop
+            // speaker it is inaudible as a note and perfectly audible as unease.
+            for (float at = 3f; at < length - swell; at += swell)
+            {
+                AddSubDrop(mix, 46f, 20f, at, 6.5f, 0.42f);
+            }
+
+            // --- the plates working ----------------------------------------------
+            // Clustered at the top and bottom of each roll, because that is when the hull is
+            // carrying the load. Scattered evenly they would be texture; on the swell they
+            // are the ship doing something.
+            for (float roll = 2f; roll < length - 4f; roll += swell)
+            {
+                int creaks = 2 + rng.Next(0, 3);
+
+                for (int i = 0; i < creaks; i++)
+                {
+                    float phase = (float)rng.NextDouble() < 0.5f ? 0.12f : 0.58f;
+                    float jitter = ((float)rng.NextDouble() - 0.5f) * 1.6f;
+                    float at = roll + swell * phase + jitter;
+
+                    if (at > 0.5f && at < length - 3f) AddCreak(mix, at, rng);
+                }
+            }
+
+            // --- something heavy, a long way off ----------------------------------
+            // Bowed metal, low and slow: a bulkhead flexing several compartments away. It is
+            // the one sound here that could be a voice if you were tired enough, which is
+            // exactly how long a night watch is.
+            float bowAt = 7f + (float)rng.NextDouble() * 6f;
+            while (bowAt < length - 8f)
+            {
+                AddBowedMetal(mix, 82.41f * Mathf.Pow(2f, rng.Next(0, 4) / 12f), bowAt, 6f, rng);
+                bowAt += swell * (1f + (float)rng.NextDouble());
+            }
+
+            // --- gulls, too far away to see ---------------------------------------
+            // Sparse, and the only thing above the drone. On a ship where the birds are the
+            // enemy, a call from somewhere out in the dark is information you cannot use.
+            float callAt = 5f + (float)rng.NextDouble() * 9f;
+            while (callAt < length - 5f)
+            {
+                AddDistantCall(mix, callAt, rng);
+                callAt += 13f + (float)rng.NextDouble() * 14f;
+            }
+
+            // --- the key moving underneath ------------------------------------------
+            // The drone stays on E and the progression does not, so the two disagree about
+            // where the level is. Four steps over the whole loop: slower than any of the
+            // other beds, because a ship's time is long.
+            AddDroneProgression(mix, 41.20f, new[] { 0, -3, -5, 2 }, length, 0.28f);
+
+            MakeSeamless(mix, 5f);
+            Normalize(mix, 0.31f);
+            return ToClip("DeadCalm", mix, true);
+        }
+
         private static void AddCreak(float[] destination, float at, System.Random rng)
         {
             var creak = Buffer(2.2f);

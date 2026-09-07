@@ -100,6 +100,14 @@ namespace ZombieHouse.Level
             {
                 // Rows 14-17 at column 4 are plain deck: the engine room's companionway
                 // comes up through them.
+                //
+                // The player starts at row 18, hard against the stern plating and one cell
+                // from the head of that companionway. Not the middle of the ship, which is
+                // where it used to be: Test Safe Start found 7 of 10 spawn markers inside
+                // the 13 m radius, because a 13 m sphere drawn from the centre of a box
+                // 28.6 m by 46 m by four decks contains most of the box. Starting at the
+                // bottom aft corner also gives the level its whole shape back — the climb
+                // to the davit at the bow, three decks up.
                 name = "Hold",
                 rows = new[]
                 {
@@ -109,9 +117,9 @@ namespace ZombieHouse.Level
                     "  #.KK.KK.#  ",
                     " #....Z....# ",
                     " #.KK...KK.# ",
-                    " #.........# ",
+                    " #.Z.......# ",
                     " #.K.KKK.K.# ",
-                    " #....P....# ",
+                    " #.........# ",
                     " #......^..# ",
                     " #......^..# ",
                     " #......^..# ",
@@ -121,7 +129,7 @@ namespace ZombieHouse.Level
                     " #.K.....K.# ",
                     " #......B..# ",
                     " #.........# ",
-                    "  #.M.U.Z.#  ",
+                    "  #PM.U...#  ",
                     "  #########  ",
                     "             ",
                 }
@@ -141,14 +149,14 @@ namespace ZombieHouse.Level
                     " #Z.^......# ",
                     " #..^......# ",
                     " #..^....Z.# ",
-                    " #....V....# ",
+                    " #Z...V....# ",
                     " #.........# ",
                     " #...M.....# ",
                     " #.........# ",
                     " #.......Z.# ",
                     " #....A....# ",
                     " #..#####..# ",
-                    " #Z.#.R.#..# ",
+                    " #..#.R.#..# ",
                     " #..#...#..# ",
                     " #..#...#.Z# ",
                     "  #.......#  ",

@@ -41,8 +41,15 @@ creature renumbers every kind after it and silently changes which boss a level s
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
 checks pass by not running. There are three: the level table in `Test Boss`, the one in
 `Test Safe Start`, and the bed table in `Test Music`. `Test Music`'s summary line names a
-count ("seven distinct beds") — update it, because a stale count is the tell that a level was
-added to the enum and not to the table.
+count ("eight distinct beds") — update it, because a stale count is the tell that a level was
+added to the enum and not to the table. `Test Boss` now derives its count from the table
+instead, having spent a while saying "six giants" over a table of eight.
+
+This is worth doing as its own step rather than as a footnote. Registering level 8 immediately
+failed `Test Safe Start`: **7 of its 10 spawn markers were inside the 13 m safe radius**,
+because the player started at row 8 of 21, column 6 of 13, on deck 1 of 4 — the exact centre
+of the solid — and a 13 m sphere drawn from the middle of a 28.6 x 46 m box four decks tall
+contains most of the box. Nothing about the level looked wrong. It had never been asked.
 
 **Only ever append to the `Sfx` enum.** `GameAudio.musicTrack` is stored in a scene as an
 `enumValueIndex`, so removing or inserting a member silently changes which music bed an
@@ -69,6 +76,9 @@ you intended to move them.
 | jungle | 12838 | 5732 |
 | merryland | 2530 | 1148 |
 | cormorant | 1453 | 641 |
+
+The Cormorant's numbers did not move when its player start and two spawn markers were
+relocated in build 5, which is the point of tracking them: markers are not geometry.
 
 A prop change that moves these has changed where things can walk, which is a bug even when
 the level still verifies.
@@ -163,7 +173,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
