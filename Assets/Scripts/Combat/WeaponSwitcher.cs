@@ -125,7 +125,13 @@ namespace ZombieHouse.Combat
             // carrying one, rather than equipping whatever happens to be in the last slot:
             // pressing a button for a gun you do not have should do nothing, not surprise
             // you with a different gun in the middle of a fight.
-            if (InputReader.SelectPowerUpPressed && PowerUpSlot >= 0) { Equip(PowerUpSlot); return; }
+            // Slot first, input second, and the order is the point. SelectPowerUpPressed is
+            // the whole input stack — a key, then six joystick buttons for the paddles —
+            // while PowerUpSlot with no scavenged weapon is a null check that returns -1
+            // without touching the array. You are not carrying the Uzi for most of a run, so
+            // testing the cheap half first takes the entire paddle scan off those frames.
+            int powerUp = PowerUpSlot;
+            if (powerUp >= 0 && InputReader.SelectPowerUpPressed) { Equip(powerUp); return; }
 
             // Pressing the rifle's own key while it is holstered draws it; the shot then
             // comes from the weapon itself on the same or the next press.
@@ -164,7 +170,7 @@ namespace ZombieHouse.Combat
                 weapons = grown;
             }
 
-            Equip(System.Array.IndexOf(weapons, powerUpWeapon));
+            Equip(PowerUpSlot);
             return true;
         }
 

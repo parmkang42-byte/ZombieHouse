@@ -54,8 +54,10 @@ mansion's size, plus nine gulls. Nothing in the project could see it: the spawne
 bodies, the verify counts reachability, and neither divided one by the other.
 
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
-checks pass by not running. There are three: the level table in `Test Boss`, the one in
-`Test Safe Start`, and the bed table in `Test Music`. `Test Music`'s summary line names a
+checks pass by not running. There is now one shared `Levels` table in `ZombieHouseSetup`
+that `Test Boss`, `Test Safe Start` and `Test Crowding` all walk — add the level there, with
+its boss kind and its crowding floor — plus the bed table in `Test Music`, which is separate
+because it is keyed on `Sfx` rather than on a scene. `Test Music`'s summary line names a
 count ("eight distinct beds") — update it, because a stale count is the tell that a level was
 added to the enum and not to the table. `Test Boss` now derives its count from the table
 instead, having spent a while saying "six giants" over a table of eight.

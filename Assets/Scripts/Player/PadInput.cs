@@ -184,12 +184,13 @@ namespace ZombieHouse.Player
                 {
                     if (!(control is UnityEngine.InputSystem.Controls.ButtonControl button)) continue;
 
-                    string name = control.name;
-                    bool isPaddle = name.StartsWith("paddle")
-                                 || name.StartsWith("leftPaddle")
-                                 || name.StartsWith("rightPaddle");
+                    // One ordinal, case-insensitive contains rather than three culture-
+                    // sensitive StartsWith calls: it is cheaper, and it also catches the
+                    // spellings the three-prefix version missed — "Paddle1", "paddleLeft".
+                    if (control.name.IndexOf("paddle", System.StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
 
-                    if (isPaddle && button.wasPressedThisFrame) return true;
+                    if (button.wasPressedThisFrame) return true;
                 }
 
                 return false;

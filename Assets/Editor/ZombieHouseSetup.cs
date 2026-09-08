@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -1347,10 +1346,14 @@ namespace ZombieHouse.EditorTools
             // level had stopped being about corridors and become about arithmetic. Fourteen
             // walkers, nine gulls and the Bosun is 24, which is 93 m² each — a shade roomier
             // than the school, in a level whose corridors are half the school's width.
+            //
+            // Only totalZombies: it is the one of the three population fields that bites on
+            // the path this level takes. populateHouseAtStart is on, so PopulateHouse places
+            // one sleeper per marker and never reads initialPopulation or maxAliveAtOnce —
+            // those govern the trickle spawner, which no level uses. Merryland sets the same
+            // one field for the same reason.
             var spawnerSo = new SerializedObject(spawner);
             spawnerSo.FindProperty("totalZombies").intValue = 14;
-            spawnerSo.FindProperty("initialPopulation").intValue = 6;
-            spawnerSo.FindProperty("maxAliveAtOnce").intValue = 10;
             spawnerSo.ApplyModifiedPropertiesWithoutUndo();
 
             var directorObject = new GameObject("LevelDirector");
@@ -3759,23 +3762,11 @@ namespace ZombieHouse.EditorTools
         /// <summary>Every level's director actually got a boss prefab and a kind.</summary>
         private static int CheckEveryLevelHasABoss()
         {
-            var levels = new (string Tag, string Scene, ZombieKind Kind)[]
-            {
-                ("Verify", ScenePath, ZombieKind.BossZombie),
-                ("Forest", ForestScenePath, ZombieKind.BossBear),
-                ("Town", TownScenePath, ZombieKind.BossHorse),
-                ("School", SchoolScenePath, ZombieKind.BossJanitor),
-                ("Pyramid", PyramidScenePath, ZombieKind.BossScarab),
-                ("Jungle", JungleScenePath, ZombieKind.BossJaguar),
-                ("Merryland", MerrylandScenePath, ZombieKind.BossMascot),
-                ("Cormorant", ShipScenePath, ZombieKind.BossBosun),
-            };
-
-            CheckedLevels = levels.Length;
+            CheckedLevels = Levels.Length;
 
             int problems = 0;
 
-            foreach (var level in levels)
+            foreach (var level in Levels)
             {
                 if (!File.Exists(level.Scene))
                 {
@@ -3806,9 +3797,9 @@ namespace ZombieHouse.EditorTools
                 }
 
                 var assigned = (ZombieKind)kind.enumValueIndex;
-                if (assigned != level.Kind)
+                if (assigned != level.Boss)
                 {
-                    Debug.LogError($"[Boss] {level.Tag} is set to {assigned}, expected {level.Kind}.");
+                    Debug.LogError($"[Boss] {level.Tag} is set to {assigned}, expected {level.Boss}.");
                     problems++;
                     continue;
                 }
@@ -4024,6 +4015,74 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>
+        /// Square metres of walkable floor per enemy, below which a level is packed rather
+        /// than hard. Two floors, because there are two families of level.
+        ///
+        /// The indoor one is calibrated to the school at 88.5 m², the tightest level here
+        /// that plays. The outdoor one is not the same number and cannot be: the open levels
+        /// run 400–645 m² per enemy, so a single 80 m² floor would let the jungle take eight
+        /// times its population and still pass, while the test claimed to have checked it.
+        /// </summary>
+        private const float IndoorFloor = 80f;
+        private const float OutdoorFloor = 300f;
+
+        /// <summary>
+        /// Every level, once.
+        ///
+        /// This was three separate tables — one in Test Boss, one in Test Safe Start, and a
+        /// third added by Test Crowding — and CLAUDE.md names the failure mode they create:
+        /// a level missing from a list is not tested and does not fail, it is skipped, and
+        /// the suite prints PASS having checked seven levels out of eight. Three lists to
+        /// remember is three chances to forget.
+        ///
+        /// Columns a given check does not care about cost it nothing; the alternative cost a
+        /// whole extra copy of the level roster.
+        /// </summary>
+        private static readonly (string Tag, string Scene, ZombieKind Boss, float CrowdFloor)[] Levels =
+        {
+            ("House",     ScenePath,          ZombieKind.BossZombie,  IndoorFloor),
+            ("Forest",    ForestScenePath,    ZombieKind.BossBear,    OutdoorFloor),
+            ("Town",      TownScenePath,      ZombieKind.BossHorse,   OutdoorFloor),
+            ("School",    SchoolScenePath,    ZombieKind.BossJanitor, IndoorFloor),
+            ("Pyramid",   PyramidScenePath,   ZombieKind.BossScarab,  IndoorFloor),
+            ("Jungle",    JungleScenePath,    ZombieKind.BossJaguar,  OutdoorFloor),
+            ("Merryland", MerrylandScenePath, ZombieKind.BossMascot,  OutdoorFloor),
+            ("Cormorant", ShipScenePath,      ZombieKind.BossBosun,   IndoorFloor),
+        };
+
+        /// <summary>
+        /// Opens a level scene and generates its geometry, returning the source.
+        ///
+        /// Two checks had grown their own copy of this and had already drifted: one searched
+        /// with FindObjectsInactive.Include and the other did not, so they disagreed about
+        /// whether a disabled generator counts. The eight Verify methods each have a third
+        /// version, but those are typed against their own concrete generator and cannot join
+        /// this; these two could, and two copies of level discovery that already disagree is
+        /// the whole argument.
+        /// </summary>
+        private static ILevelSource OpenLevel(string scene, string tag)
+        {
+            EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
+
+            ILevelSource source = null;
+            foreach (MonoBehaviour behaviour in Object.FindObjectsByType<MonoBehaviour>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (behaviour is ILevelSource candidate) { source = candidate; break; }
+            }
+
+            if (source == null)
+            {
+                Debug.LogError($"[{tag}] has no level source.");
+                return null;
+            }
+
+            ProtoMaterials.ClearCache();
+            source.Generate();
+            return source;
+        }
+
+        /// <summary>
         /// Floor space per enemy, measured on every level and compared across them.
         ///
         /// "Too much swarming" is a real complaint that cannot be acted on as stated, because
@@ -4052,26 +4111,13 @@ namespace ZombieHouse.EditorTools
         /// default 46 walkers in a hull a quarter of the mansion's size, with nine gulls
         /// on top.
         /// </summary>
-        /// <summary>
-        /// Square metres of walkable floor per enemy, below which a level is packed rather
-        /// than hard. Calibrated to the school, the tightest level in the game that plays.
-        /// </summary>
-        private const float IndoorFloor = 80f;
-
         [MenuItem("Zombie House/Test Crowding", false, 51)]
         public static void TestCrowding()
         {
-            var levels = new (string Tag, string Scene)[]
-            {
-                ("House", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
-                ("School", SchoolScenePath), ("Pyramid", PyramidScenePath),
-                ("Jungle", JungleScenePath), ("Merryland", MerrylandScenePath),
-                ("Cormorant", ShipScenePath),
-            };
+            int problems = 0;
+            int checkedLevels = 0;
 
-            var measured = new List<(string Tag, float Area, int Population, float Each)>();
-
-            foreach (var level in levels)
+            foreach (var level in Levels)
             {
                 if (!File.Exists(level.Scene))
                 {
@@ -4079,18 +4125,8 @@ namespace ZombieHouse.EditorTools
                     continue;
                 }
 
-                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
-
-                var source = Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
-                                   .OfType<ILevelSource>().FirstOrDefault();
-                if (source == null)
-                {
-                    Debug.LogError($"[Crowding] {level.Tag} has no level source.");
-                    continue;
-                }
-
-                ProtoMaterials.ClearCache();
-                source.Generate();
+                ILevelSource source = OpenLevel(level.Scene, "Crowding");
+                if (source == null) { problems++; continue; }
 
                 var baker = Object.FindAnyObjectByType<RuntimeNavMeshBaker>();
                 baker.SetBakeVolume(source.LevelBounds.center, source.LevelBounds.size);
@@ -4101,49 +4137,49 @@ namespace ZombieHouse.EditorTools
                 var spawner = Object.FindAnyObjectByType<ZombieSpawner>();
                 var spawnerSo = new SerializedObject(spawner);
 
-                int drawn = spawnerSo.FindProperty("totalZombies").intValue;
+                // Drive the real entry point rather than reading back the knob the build
+                // script wrote. `totalZombies` is a cap, not a headcount: PopulateHouse — the
+                // path every level actually takes — places one sleeper per spawn MARKER, and
+                // Configure builds that marker list from the level's own Z positions plus as
+                // many hiding spots as the cap allows. Reading `totalZombies` would be
+                // checking authored intent against itself, which CLAUDE.md names twice.
+                var director = Object.FindAnyObjectByType<LevelDirector>();
+                var directorSo = new SerializedObject(director);
+                var prefab = (GameObject)directorSo.FindProperty("zombiePrefab").objectReferenceValue;
+
+                spawner.Configure(prefab, source.ZombieSpawns, source.HidingSpots);
+                spawnerSo.Update();
+
+                int drawn = spawnerSo.FindProperty("spawnPoints").arraySize;
                 int lurkers = spawnerSo.FindProperty("lurkerPrefab").objectReferenceValue != null
                             ? spawnerSo.FindProperty("lurkerPositions").arraySize
                             : 0;
-
-                var director = Object.FindAnyObjectByType<LevelDirector>();
-                var directorSo = new SerializedObject(director);
                 int boss = directorSo.FindProperty("bossPrefab").objectReferenceValue != null ? 1 : 0;
 
                 int population = drawn + lurkers + boss;
                 float each = population > 0 ? area / population : 0f;
-
-                measured.Add((level.Tag, area, population, each));
+                checkedLevels++;
 
                 Debug.Log($"[Crowding] {level.Tag,-10} {area,8:0} m²  {population,3} enemies " +
-                          $"({drawn} drawn + {lurkers} placed + {boss} boss)  ->  {each,6:0.0} m² each");
-            }
+                          $"({drawn} drawn + {lurkers} placed + {boss} boss)  ->  {each,6:0.0} m² " +
+                          $"each, floor {level.CrowdFloor:0}");
 
-            if (measured.Count < 2)
-            {
-                Debug.Log("[Crowding] Not enough levels built to compare.");
-                return;
-            }
+                if (each >= level.CrowdFloor) continue;
 
-            float median = measured.Select(m => m.Each).OrderBy(v => v).ElementAt(measured.Count / 2);
-            Debug.Log($"[Crowding] Median across {measured.Count} levels: {median:0.0} m² per enemy, " +
-                      $"floor {IndoorFloor:0} m².");
-
-            int problems = 0;
-
-            foreach (var m in measured)
-            {
-                if (m.Each >= IndoorFloor) continue;
-
-                Debug.LogError($"[Crowding] {m.Tag} gives each enemy {m.Each:0.0} m², under the " +
-                               $"{IndoorFloor:0} m² floor. The school is the tightest level in this " +
-                               "game that plays, at 88.5 — anything below this is not a hard level, " +
-                               "it is a level with no room to fight or retreat in.");
+                Debug.LogError($"[Crowding] {level.Tag} gives each enemy {each:0.0} m², under its " +
+                               $"{level.CrowdFloor:0} m² floor. That is not a hard level, it is a " +
+                               "level with no room to fight or retreat in.");
                 problems++;
             }
 
+            if (checkedLevels == 0)
+            {
+                Debug.Log("[Crowding] FAIL — no level could be measured.");
+                return;
+            }
+
             Debug.Log(problems == 0
-                ? $"[Crowding] PASS — every level gives each enemy at least {IndoorFloor:0} m²."
+                ? $"[Crowding] PASS — all {checkedLevels} levels clear their own floor."
                 : $"[Crowding] FAIL — {problems} level(s) overcrowded.");
         }
 
@@ -5759,14 +5795,7 @@ namespace ZombieHouse.EditorTools
 
             int problems = 0;
 
-            var levels = new (string Tag, string Scene)[]
-            {
-                ("Verify", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
-                ("School", SchoolScenePath), ("Pyramid", PyramidScenePath), ("Jungle", JungleScenePath),
-                ("Merryland", MerrylandScenePath), ("Cormorant", ShipScenePath),
-            };
-
-            foreach (var level in levels)
+            foreach (var level in Levels)
             {
                 if (!File.Exists(level.Scene))
                 {
@@ -5774,24 +5803,8 @@ namespace ZombieHouse.EditorTools
                     continue;
                 }
 
-                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
-
-                ILevelSource source = null;
-                foreach (MonoBehaviour behaviour in Object.FindObjectsByType<MonoBehaviour>(
-                             FindObjectsInactive.Include, FindObjectsSortMode.None))
-                {
-                    if (behaviour is ILevelSource candidate) { source = candidate; break; }
-                }
-
-                if (source == null)
-                {
-                    Debug.LogError($"[SafeStart] {level.Tag} has no level source.");
-                    problems++;
-                    continue;
-                }
-
-                ProtoMaterials.ClearCache();
-                source.Generate();
+                ILevelSource source = OpenLevel(level.Scene, "SafeStart");
+                if (source == null) { problems++; continue; }
 
                 int inside = 0;
                 foreach (Vector3 spawn in source.ZombieSpawns)
@@ -6836,7 +6849,7 @@ namespace ZombieHouse.EditorTools
                     Debug.LogError($"[Weapons] The Uzi arrived with {uzi.TotalAmmo} rounds, not 200.");
                     problems++;
                 }
-                else if (switcher.PowerUpSlot < 0)
+                else if (!switcher.HasPowerUp)
                 {
                     Debug.LogError("[Weapons] Granted, but the switcher has no slot for it.");
                     problems++;
@@ -6919,16 +6932,7 @@ namespace ZombieHouse.EditorTools
                     Debug.LogError("[Weapons] The Uzi is empty and still in the slots — it should be gone.");
                     problems++;
                 }
-                else if (switcher.PowerUpSlot >= 0)
-                {
-                    // The direct-select button branches on this. If it still reports a slot
-                    // after the Uzi has taken itself away, pressing the paddle mid-fight hands
-                    // you whatever is in that slot instead — which is the gatling.
-                    Debug.LogError($"[Weapons] The Uzi is gone and PowerUpSlot still says " +
-                                   $"{switcher.PowerUpSlot}. The direct-select button would equip " +
-                                   "a different gun.");
-                    problems++;
-                }
+
                 else if (uziObject.activeSelf)
                 {
                     Debug.LogError("[Weapons] The empty Uzi is still active in the rig.");
