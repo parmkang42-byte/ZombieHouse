@@ -39,7 +39,19 @@ namespace ZombieHouse.Combat
         private float _nextSwitchTime;
 
         /// <summary>True while the scavenged weapon is in your hands or on your back.</summary>
-        public bool HasPowerUp => powerUpWeapon != null && System.Array.IndexOf(weapons, powerUpWeapon) >= 0;
+        public bool HasPowerUp => PowerUpSlot >= 0;
+
+        /// <summary>
+        /// Which slot the scavenged weapon is in, or -1 while you are not carrying one.
+        ///
+        /// A property rather than the same Array.IndexOf written in three places. The direct
+        /// select button needs it, HasPowerUp needs it, and a test needs to be able to ask —
+        /// and the one thing that must never happen is the button equipping "the last slot"
+        /// on the assumption that the Uzi is in it. After the Uzi empties itself the last
+        /// slot is the gatling, so that assumption hands you a different gun mid-fight.
+        /// </summary>
+        public int PowerUpSlot =>
+            powerUpWeapon == null || weapons == null ? -1 : System.Array.IndexOf(weapons, powerUpWeapon);
 
         /// <summary>Tells the switcher which weapon is the scavenged one. It starts stowed.</summary>
         public void ConfigurePowerUp(GameObject weapon)
@@ -101,12 +113,19 @@ namespace ZombieHouse.Combat
             if (!GameManager.GameplayActive) return;
             if (weapons == null || weapons.Length == 0) return;
 
-            // Number keys pick a weapon outright. Middle mouse is convenient but sits on a
-            // button that mouse vendor software often reassigns, so it must not be the
-            // only way to change weapon.
+            // Number keys pick a weapon outright, 1-3 for the permanent weapons and 4 for
+            // the scavenged one; on a pad it is the d-pad and a back paddle. Middle mouse is
+            // convenient but sits on a button that mouse vendor software often reassigns, so
+            // it must not be the only way to change weapon.
             if (InputReader.SelectSlotOnePressed) { Equip(0); return; }
             if (InputReader.SelectSlotTwoPressed && weapons.Length > 1) { Equip(1); return; }
             if (InputReader.SelectSlotThreePressed && weapons.Length > 2) { Equip(2); return; }
+
+            // The scavenged weapon, straight to hand. Silently nothing when you are not
+            // carrying one, rather than equipping whatever happens to be in the last slot:
+            // pressing a button for a gun you do not have should do nothing, not surprise
+            // you with a different gun in the middle of a fight.
+            if (InputReader.SelectPowerUpPressed && PowerUpSlot >= 0) { Equip(PowerUpSlot); return; }
 
             // Pressing the rifle's own key while it is holstered draws it; the shot then
             // comes from the weapon itself on the same or the next press.

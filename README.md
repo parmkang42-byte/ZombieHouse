@@ -427,6 +427,20 @@ from outside that plane. It screams first, so it is never a cheap shot, and it c
 where you were when it screamed rather than tracking you — stepping aside works, standing
 still does not. They will not dive at you through the hull.
 
+The ship carries **14 walkers** rather than the usual 46, and that is measured rather than
+felt. `Test Crowding` bakes each level and divides its walkable floor by everything that wants
+to kill you: the jungle gives each enemy 645 m2, the mansion 169, and the school -- the tightest
+level in this game that plays -- 88.5. The Cormorant was at **39.9**, because it had been handed
+a full house's population in a hull a quarter of the house's size, with nine gulls on top. A
+ship is meant to feel tight, but there is a difference between nowhere to run and nowhere to
+stand. Fourteen walkers, nine gulls and the Bosun is 93 m2 each, a shade roomier than the
+school in a level whose corridors are half the school's width.
+
+The crew's hearing came back down with it. The deckhand was on 1.35x for "a steel hull carries
+a footstep", which is true and was the wrong thing to give them: detection propagates between
+zombies, so sharp hearing in a sealed box meant one contact anywhere pulled the entire deck.
+That was not a horde arriving, it was a level arriving.
+
 **The Bosun** waits by the davit, so reaching the boat means going through him. He fights on
 the open weather deck and he has to: the deckhead below is 2.6 m, which caps an indoor boss
 at about 1.4x, and 1.4x is not a boss, it is a large man. Above deck there is nothing
@@ -469,6 +483,7 @@ Re-run it any time to rebuild the scene from scratch.
 | **Space** (or **X** on a pad) | Act: lift the power cell, fit it, cut a hostage loose |
 | E | Rifle — draws it if holstered, then fires it |
 | 1 / 2 / 3 | Select Desert Eagle / rifle / gatling gun directly |
+| 4 | Select the scavenged Uzi, while you have one |
 | **MMB (wheel click)** | Cycle pistol → rifle → gatling gun (→ Uzi, while you have one) |
 | RMB | Aim down sights (iron sights; crosshair hides) |
 | **Right** Ctrl **or** forward thumb button | Swing katana (offhand, left hand) |
@@ -519,9 +534,21 @@ down mid-fight and reach for the mouse without touching a menu.
 | Left stick click | Hold to sprint |
 | Right stick click | Cycle weapons |
 | D-pad ← ↑ → | Desert Eagle / rifle / gatling gun |
+| Back paddle | The scavenged Uzi, while you have one |
 | D-pad ↓ | Torch |
 | Menu / Start | Pause |
 | View / Back | Restart after win/lose |
+
+The Uzi is on the **back paddles** because it is the weapon that most needs a button of its
+own: you pick it up mid-fight, it has a hard round count, and it takes itself out of your hands
+the moment it runs dry, so reaching it by cycling means cycling towards a slot that may not be
+there any more. A paddle is also the only input on a pad you can reach without taking a thumb
+off a stick. Any of buttons 10-15 will do it, which covers two-paddle and four-paddle pads.
+
+One caveat that is the pad's rather than the game's: if the paddles are configured in the
+controller's own software to *mirror* a face button, which is how an Xbox Elite ships, Windows
+never sees a separate button and nothing can bind to them. Set the paddle to its own input
+rather than to a copy of A.
 
 A stick is not a mouse and the difference is not cosmetic. A mouse reports how far it has
 already moved; a stick reports how far it is being held, which is a request to keep turning.

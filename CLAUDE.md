@@ -38,6 +38,21 @@ collision. A missing prop mesh is a deliberate no-op that leaves the boxes visib
 `ZombieProfile.kind` are stored in scenes and prefabs as `enumValueIndex` too, so inserting a
 creature renumbers every kind after it and silently changes which boss a level spawns.
 
+**Population is headcount against floor area, not headcount.** `Test Crowding` bakes each
+level, sums the real area of its NavMesh triangles and divides by the drawn population plus
+lurkers plus the boss. The floor is **80 m2 per enemy**, calibrated to the school at 88.5 --
+the tightest level here that plays. Current spread: jungle 645, forest 576, town 499,
+merryland 401, house 169, pyramid 112, school 88.5, cormorant 93.
+
+Two families, and the check had to learn that the hard way. Its first version compared each
+level to the median of all eight and flagged the house, the school and the pyramid, none of
+which anyone has complained about: the four outdoor levels run 400-645 and the three indoor
+ones 88-169, and a median dominated by open ground is not a standard an interior can meet.
+
+The Cormorant shipped at **39.9** -- the default 46 walkers in a hull a quarter of the
+mansion's size, plus nine gulls. Nothing in the project could see it: the spawner counts
+bodies, the verify counts reachability, and neither divided one by the other.
+
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
 checks pass by not running. There are three: the level table in `Test Boss`, the one in
 `Test Safe Start`, and the bed table in `Test Music`. `Test Music`'s summary line names a
@@ -173,7 +188,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

@@ -167,6 +167,34 @@ namespace ZombieHouse.Player
         private static bool RightStickDown => Pad != null && Pad.rightStickButton.wasPressedThisFrame;
         private static bool StartDown => Pad != null && Pad.startButton.wasPressedThisFrame;
         private static bool SelectDown => Pad != null && Pad.selectButton.wasPressedThisFrame;
+
+        /// <summary>
+        /// The back paddles. Not part of the standard Gamepad layout, because most pads do
+        /// not have them and the ones that do disagree about what they are called, so this
+        /// walks the device's own controls looking for the usual names. A pad without them
+        /// simply never reports one.
+        /// </summary>
+        private static bool PaddleDown
+        {
+            get
+            {
+                if (Pad == null) return false;
+
+                foreach (UnityEngine.InputSystem.InputControl control in Pad.allControls)
+                {
+                    if (!(control is UnityEngine.InputSystem.Controls.ButtonControl button)) continue;
+
+                    string name = control.name;
+                    bool isPaddle = name.StartsWith("paddle")
+                                 || name.StartsWith("leftPaddle")
+                                 || name.StartsWith("rightPaddle");
+
+                    if (isPaddle && button.wasPressedThisFrame) return true;
+                }
+
+                return false;
+            }
+        }
 #else
         // ---- legacy Input Manager -------------------------------------------
         // Axis indices are XInput's layout on Windows, which is what a wireless Xbox pad
@@ -230,6 +258,30 @@ namespace ZombieHouse.Player
         private static bool RightStickDown => Input.GetKeyDown(KeyCode.JoystickButton9);
         private static bool StartDown => Input.GetKeyDown(KeyCode.JoystickButton7);
         private static bool SelectDown => Input.GetKeyDown(KeyCode.JoystickButton6);
+
+        /// <summary>
+        /// The back paddles, on a pad that has them.
+        ///
+        /// XInput itself has no concept of a paddle: the ten buttons it defines are 0-9 and
+        /// they are all spoken for. A pad with extra buttons on the back reports them past
+        /// the end of that, so this watches 10 through 15 — which covers two paddles, four
+        /// paddles, and the handful of pads that put them somewhere odd in between.
+        ///
+        /// If the paddles are configured in the pad's own software to *mirror* a face button
+        /// — which is how an Xbox Elite ships — Windows never sees a separate button and this
+        /// will not fire. That is the pad's configuration rather than something the game can
+        /// reach: set the paddle to its own input instead of to a copy of A.
+        /// </summary>
+        private static bool PaddleDown
+        {
+            get
+            {
+                for (KeyCode key = KeyCode.JoystickButton10; key <= KeyCode.JoystickButton15; key++)
+                    if (Input.GetKeyDown(key)) return true;
+
+                return false;
+            }
+        }
 #endif
 
         // ---- what InputReader asks for --------------------------------------
@@ -289,6 +341,17 @@ namespace ZombieHouse.Player
         public static bool SelectSlotTwoPressed { get { Poll(); return _slotUpIs && !_slotUpWas; } }
         public static bool SelectSlotThreePressed { get { Poll(); return _slotRightIs && !_slotRightWas; } }
         public static bool FlashlightPressed { get { Poll(); return _torchIs && !_torchWas; } }
+
+        /// <summary>
+        /// The scavenged weapon, on the back paddles.
+        ///
+        /// It is the one weapon that most needs a button of its own. You pick it up in the
+        /// middle of a fight, it has a hard round count, and it takes itself out of your
+        /// hands the moment it runs dry — so reaching it by cycling means cycling towards a
+        /// slot that may not be there any more. A paddle is also the only input on a pad you
+        /// can use without taking a thumb off a stick, which is exactly when you want it.
+        /// </summary>
+        public static bool SelectPowerUpPressed => PaddleDown;
 
         public static bool PausePressed => StartDown;
         public static bool RestartPressed => SelectDown;

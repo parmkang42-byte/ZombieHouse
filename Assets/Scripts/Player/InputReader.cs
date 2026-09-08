@@ -112,6 +112,10 @@ namespace ZombieHouse.Player
                                                    || PadInput.SelectSlotTwoPressed;
         public static bool SelectSlotThreePressed => (Kb != null && Kb.digit3Key.wasPressedThisFrame)
                                                      || PadInput.SelectSlotThreePressed;
+
+        /// <summary>The scavenged weapon: 4 on the keyboard, a back paddle on a pad.</summary>
+        public static bool SelectPowerUpPressed => (Kb != null && Kb.digit4Key.wasPressedThisFrame)
+                                                   || PadInput.SelectPowerUpPressed;
         public static bool ReloadPressed => (Kb != null && (Kb.rKey.wasPressedThisFrame
                                                         || Kb.leftShiftKey.wasPressedThisFrame
                                                         || Kb.rightShiftKey.wasPressedThisFrame))
@@ -190,6 +194,10 @@ namespace ZombieHouse.Player
                                                    || PadInput.SelectSlotTwoPressed;
         public static bool SelectSlotThreePressed => Input.GetKeyDown(KeyCode.Alpha3)
                                                      || PadInput.SelectSlotThreePressed;
+
+        /// <summary>The scavenged weapon: 4 on the keyboard, a back paddle on a pad.</summary>
+        public static bool SelectPowerUpPressed => Input.GetKeyDown(KeyCode.Alpha4)
+                                                   || PadInput.SelectPowerUpPressed;
         public static bool ReloadPressed => Input.GetKeyDown(KeyCode.R)
                                          || Input.GetKeyDown(KeyCode.LeftShift)
                                          || Input.GetKeyDown(KeyCode.RightShift)

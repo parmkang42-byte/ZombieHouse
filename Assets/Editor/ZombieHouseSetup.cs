@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -1333,6 +1334,24 @@ namespace ZombieHouse.EditorTools
             var spawnerObject = new GameObject("ZombieSpawner");
             spawnerObject.transform.SetParent(managers.transform, false);
             var spawner = spawnerObject.AddComponent<ZombieSpawner>();
+
+            // Fourteen, against the default 46.
+            //
+            // Test Crowding measured the Cormorant at 39.9 m² of walkable floor per enemy
+            // while the school — the tightest level in this game that plays — is 88.5 and the
+            // mansion is 168.7. It was carrying a full house's population in a hull a quarter
+            // of the house's size, and nine gulls on top of that.
+            //
+            // A ship is meant to feel tight; that is what a ship is. But there is a
+            // difference between nowhere to run and nowhere to *stand*, and at 40 m² each the
+            // level had stopped being about corridors and become about arithmetic. Fourteen
+            // walkers, nine gulls and the Bosun is 24, which is 93 m² each — a shade roomier
+            // than the school, in a level whose corridors are half the school's width.
+            var spawnerSo = new SerializedObject(spawner);
+            spawnerSo.FindProperty("totalZombies").intValue = 14;
+            spawnerSo.FindProperty("initialPopulation").intValue = 6;
+            spawnerSo.FindProperty("maxAliveAtOnce").intValue = 10;
+            spawnerSo.ApplyModifiedPropertiesWithoutUndo();
 
             var directorObject = new GameObject("LevelDirector");
             directorObject.transform.SetParent(managers.transform, false);
@@ -4005,6 +4024,156 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>
+        /// Floor space per enemy, measured on every level and compared across them.
+        ///
+        /// "Too much swarming" is a real complaint that cannot be acted on as stated, because
+        /// the number that matters was never headcount. It is headcount against *room*. The
+        /// Cormorant was carrying the default 46 walkers, the same as the mansion, in a hull
+        /// a fraction of the mansion's size, and nothing in the project could see that: the
+        /// spawner counts bodies, the verify counts reachability, and neither divides one by
+        /// the other.
+        ///
+        /// So this bakes each level, sums the actual area of its NavMesh triangles, and
+        /// divides by everything that will come at you — the drawn population, the lurkers
+        /// placed on top of it, and the boss. The absolute figure means little; the spread
+        /// across eight levels means a great deal, because seven of them play the way they
+        /// are meant to.
+        ///
+        /// The floor is calibrated rather than chosen, and it took a measurement to get right.
+        /// The first version compared each level to the median of all eight, which flagged the
+        /// house, the school and the pyramid — three levels nobody has ever complained about.
+        /// The mistake was assuming one family. There are two: the four outdoor levels run
+        /// 400–645 m² per enemy and the three indoor ones 88–169, and a median dominated by
+        /// open ground is not a standard an interior can meet.
+        ///
+        /// So the floor is the tightest level that actually plays. That is the school at
+        /// 88.5 m², and 80 leaves it a margin. The Cormorant measured 39.9 — 2.2x denser than
+        /// the school and four times denser than the mansion, because it was carrying the
+        /// default 46 walkers in a hull a quarter of the mansion's size, with nine gulls
+        /// on top.
+        /// </summary>
+        /// <summary>
+        /// Square metres of walkable floor per enemy, below which a level is packed rather
+        /// than hard. Calibrated to the school, the tightest level in the game that plays.
+        /// </summary>
+        private const float IndoorFloor = 80f;
+
+        [MenuItem("Zombie House/Test Crowding", false, 51)]
+        public static void TestCrowding()
+        {
+            var levels = new (string Tag, string Scene)[]
+            {
+                ("House", ScenePath), ("Forest", ForestScenePath), ("Town", TownScenePath),
+                ("School", SchoolScenePath), ("Pyramid", PyramidScenePath),
+                ("Jungle", JungleScenePath), ("Merryland", MerrylandScenePath),
+                ("Cormorant", ShipScenePath),
+            };
+
+            var measured = new List<(string Tag, float Area, int Population, float Each)>();
+
+            foreach (var level in levels)
+            {
+                if (!File.Exists(level.Scene))
+                {
+                    Debug.LogWarning($"[Crowding] {level.Tag} has not been built; skipping.");
+                    continue;
+                }
+
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                var source = Object.FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None)
+                                   .OfType<ILevelSource>().FirstOrDefault();
+                if (source == null)
+                {
+                    Debug.LogError($"[Crowding] {level.Tag} has no level source.");
+                    continue;
+                }
+
+                ProtoMaterials.ClearCache();
+                source.Generate();
+
+                var baker = Object.FindAnyObjectByType<RuntimeNavMeshBaker>();
+                baker.SetBakeVolume(source.LevelBounds.center, source.LevelBounds.size);
+                baker.Bake();
+
+                float area = WalkableArea();
+
+                var spawner = Object.FindAnyObjectByType<ZombieSpawner>();
+                var spawnerSo = new SerializedObject(spawner);
+
+                int drawn = spawnerSo.FindProperty("totalZombies").intValue;
+                int lurkers = spawnerSo.FindProperty("lurkerPrefab").objectReferenceValue != null
+                            ? spawnerSo.FindProperty("lurkerPositions").arraySize
+                            : 0;
+
+                var director = Object.FindAnyObjectByType<LevelDirector>();
+                var directorSo = new SerializedObject(director);
+                int boss = directorSo.FindProperty("bossPrefab").objectReferenceValue != null ? 1 : 0;
+
+                int population = drawn + lurkers + boss;
+                float each = population > 0 ? area / population : 0f;
+
+                measured.Add((level.Tag, area, population, each));
+
+                Debug.Log($"[Crowding] {level.Tag,-10} {area,8:0} m²  {population,3} enemies " +
+                          $"({drawn} drawn + {lurkers} placed + {boss} boss)  ->  {each,6:0.0} m² each");
+            }
+
+            if (measured.Count < 2)
+            {
+                Debug.Log("[Crowding] Not enough levels built to compare.");
+                return;
+            }
+
+            float median = measured.Select(m => m.Each).OrderBy(v => v).ElementAt(measured.Count / 2);
+            Debug.Log($"[Crowding] Median across {measured.Count} levels: {median:0.0} m² per enemy, " +
+                      $"floor {IndoorFloor:0} m².");
+
+            int problems = 0;
+
+            foreach (var m in measured)
+            {
+                if (m.Each >= IndoorFloor) continue;
+
+                Debug.LogError($"[Crowding] {m.Tag} gives each enemy {m.Each:0.0} m², under the " +
+                               $"{IndoorFloor:0} m² floor. The school is the tightest level in this " +
+                               "game that plays, at 88.5 — anything below this is not a hard level, " +
+                               "it is a level with no room to fight or retreat in.");
+                problems++;
+            }
+
+            Debug.Log(problems == 0
+                ? $"[Crowding] PASS — every level gives each enemy at least {IndoorFloor:0} m²."
+                : $"[Crowding] FAIL — {problems} level(s) overcrowded.");
+        }
+
+        /// <summary>
+        /// The real area of the baked NavMesh, by summing its triangles.
+        ///
+        /// Not the bake volume and not the triangle count. A level's bounds include
+        /// everything it cannot walk on, and the triangle count says how complicated the
+        /// mesh is rather than how big — the jungle has ten times the mansion's triangles
+        /// and is not ten times the size.
+        /// </summary>
+        private static float WalkableArea()
+        {
+            NavMeshTriangulation tri = NavMesh.CalculateTriangulation();
+
+            float total = 0f;
+
+            for (int i = 0; i + 2 < tri.indices.Length; i += 3)
+            {
+                Vector3 a = tri.vertices[tri.indices[i]];
+                Vector3 b = tri.vertices[tri.indices[i + 1]];
+                Vector3 c = tri.vertices[tri.indices[i + 2]];
+
+                total += Vector3.Cross(b - a, c - a).magnitude * 0.5f;
+            }
+
+            return total;
+        }
+
+        /// <summary>
         /// The gulls: that one can fly, and — the part that matters — that one cannot fail
         /// to come back.
         ///
@@ -6667,7 +6836,7 @@ namespace ZombieHouse.EditorTools
                     Debug.LogError($"[Weapons] The Uzi arrived with {uzi.TotalAmmo} rounds, not 200.");
                     problems++;
                 }
-                else if (!switcher.HasPowerUp)
+                else if (switcher.PowerUpSlot < 0)
                 {
                     Debug.LogError("[Weapons] Granted, but the switcher has no slot for it.");
                     problems++;
@@ -6685,6 +6854,20 @@ namespace ZombieHouse.EditorTools
 
                 // ---- the wheel, with four things on it ------------------------
                 // Pistol, rifle, gatling, Uzi, round again. One button, one behaviour.
+                // The direct-select button equips PowerUpSlot. Prove that slot is the Uzi
+                // rather than trusting that GrantPowerUp appended it to the end.
+                switcher.Equip(switcher.PowerUpSlot);
+                if (switcher.Current == null || switcher.Current.gameObject != uziObject)
+                {
+                    string held = switcher.Current == null ? "nothing" : switcher.Current.WeaponName;
+                    Debug.LogError($"[Weapons] Equipping PowerUpSlot gave {held}, not the Uzi.");
+                    problems++;
+                }
+                else
+                {
+                    Debug.Log("[Weapons] PowerUpSlot equips the Uzi directly.");
+                }
+
                 switcher.Equip(0);
                 bool cycleOk = switcher.NextWheelSlot() == 1;
                 switcher.Equip(1);
@@ -6734,6 +6917,16 @@ namespace ZombieHouse.EditorTools
                 if (switcher.HasPowerUp)
                 {
                     Debug.LogError("[Weapons] The Uzi is empty and still in the slots — it should be gone.");
+                    problems++;
+                }
+                else if (switcher.PowerUpSlot >= 0)
+                {
+                    // The direct-select button branches on this. If it still reports a slot
+                    // after the Uzi has taken itself away, pressing the paddle mid-fight hands
+                    // you whatever is in that slot instead — which is the gatling.
+                    Debug.LogError($"[Weapons] The Uzi is gone and PowerUpSlot still says " +
+                                   $"{switcher.PowerUpSlot}. The direct-select button would equip " +
+                                   "a different gun.");
                     problems++;
                 }
                 else if (uziObject.activeSelf)

@@ -557,7 +557,12 @@ namespace ZombieHouse.Enemies
                 WanderSpeed = 0.8f, InvestigateSpeed = 2.0f, ChaseSpeed = 3.3f, TurnSpeed = 190f,
                 AttackDamage = 17f, AttackCooldown = 1.25f, AttackWindup = 0.44f,
                 SightRange = 17f, FieldOfView = 110f, MemorySeconds = 14f,
-                HearingMultiplier = 1.35f,
+                // Was 1.35 for "a steel hull carries a footstep", which is true and was the
+                // wrong thing to give them. Detection propagates through ZombieCallout, so
+                // sharp hearing in a sealed box meant one contact anywhere pulled the whole
+                // deck — not a horde arriving, an entire level arriving at once. Density was
+                // most of the swarming and this was the rest of it.
+                HearingMultiplier = 1.05f,
                 Scale = 1.02f, SkinTint = new Color(0.92f, 0.97f, 0.95f),
                 StrideCyclesPerMetre = 0.58f, LurchDegrees = 6f
             },
@@ -579,7 +584,7 @@ namespace ZombieHouse.Enemies
                 WanderSpeed = 1.1f, InvestigateSpeed = 2.9f, ChaseSpeed = 4.7f, TurnSpeed = 280f,
                 AttackDamage = 14f, AttackCooldown = 1.0f, AttackWindup = 0.32f,
                 SightRange = 27f, FieldOfView = 125f, MemorySeconds = 18f,
-                HearingMultiplier = 1.15f,
+                HearingMultiplier = 1f,
                 Scale = 1.06f, SkinTint = new Color(0.90f, 0.95f, 0.94f),
                 StrideCyclesPerMetre = 0.66f, LurchDegrees = 4f
             },
