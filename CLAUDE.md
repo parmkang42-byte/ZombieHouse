@@ -57,6 +57,28 @@ ambiguity — does not arise. What is left is the law of cosines twice, plus `_s
 ankle sits 6 cm forward of the knee as well as below it, so the lower segment is not straight
 and ignoring that tilts the shin about eight degrees.
 
+**The project is in LINEAR colour space, and every ambient or fog colour must go through
+`LevelLighting.SetAmbient` / `SetFogColor`.** Those colours are authored as sRGB and Unity
+linearises them before use; in gamma it did not, so the number in the source *was* the light
+contribution. Flipping the switch silently reinterprets all sixteen of them at once — an
+ambient of 0.055 stops contributing 0.055 and starts contributing 0.0045, twelve times less.
+`AsAuthored` re-encodes so the authored number keeps meaning what it says, and is a no-op
+under gamma, which is what makes the switch reversible. `Test Colour Space` caught exactly
+this failure on 7 of 8 levels before it shipped.
+
+Ambient lives in the **scene**, so a change to `ConfigureLighting` needs the levels rebuilt —
+the same trap as the house lamps. Authored contributions currently run 0.043–0.091, except the
+house at 0.251.
+
+**Nothing headless can tell you how the game LOOKS.** Two batch-mode renders of the same scene
+came back three times apart from each other, so there is no reliable automated exposure
+measurement here; a `MeasureExposure` probe was written, found to be unrepeatable, and deleted
+rather than left around to mislead. Known outstanding: **emissives were not re-encoded**, so
+every glowing thing (eyes, flames, sight dots — the authored 1.5–2.8 range) is roughly 2.5x
+hotter under linear and will bloom harder. That is deliberate — the `.mat` assets already
+exist and `CreateMaterial` skips existing ones, so a code-only fix would change half the
+picture. Tune it with eyes on the screen.
+
 **A level's own lights cast shadows; anything attached to a creature, pickup or NPC does
 not.** `LevelLighting.MakeRoomLight` is the one place that decides, and `Test Shadows`
 enforces both halves. Every light in the game used to be created with `LightShadows.None`,
@@ -245,7 +267,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

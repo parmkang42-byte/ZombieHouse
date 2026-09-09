@@ -231,7 +231,7 @@ namespace ZombieHouse.EditorTools
             RenderSettings.skybox = CreateNightSkyMaterial();
 
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.055f, 0.065f, 0.09f);
+            LevelLighting.SetAmbient(new Color(0.055f, 0.065f, 0.09f));
 
             // Fog is most of the dark: dense enough to close the wood in again, and only
             // just lifted off black so trunks read as silhouettes at the edge of the beam
@@ -239,7 +239,7 @@ namespace ZombieHouse.EditorTools
             // fogDensity towards 0.018 and raise the moon back to 1.15 to open it up.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.025f, 0.030f, 0.050f);
+            LevelLighting.SetFogColor(new Color(0.025f, 0.030f, 0.050f));
             RenderSettings.fogDensity = 0.042f;
         }
 
@@ -451,13 +451,13 @@ namespace ZombieHouse.EditorTools
             RenderSettings.skybox = CreateNightSkyMaterial();
 
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.085f, 0.09f, 0.115f);
+            LevelLighting.SetAmbient(new Color(0.085f, 0.09f, 0.115f));
 
             // Thin dust rather than the wood's fog: it hangs in the lamplight and softens
             // the far end of the street without hiding the near half of it.
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.075f, 0.065f, 0.060f);
+            LevelLighting.SetFogColor(new Color(0.075f, 0.065f, 0.060f));
             RenderSettings.fogDensity = 0.017f;
         }
 
@@ -817,11 +817,11 @@ namespace ZombieHouse.EditorTools
         private static void ConfigureSchoolLighting()
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.055f, 0.058f, 0.062f);
+            LevelLighting.SetAmbient(new Color(0.055f, 0.058f, 0.062f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.03f, 0.032f, 0.035f);
+            LevelLighting.SetFogColor(new Color(0.03f, 0.032f, 0.035f));
             RenderSettings.fogDensity = 0.022f;
 
             RenderSettings.skybox = null;
@@ -1070,11 +1070,11 @@ namespace ZombieHouse.EditorTools
         private static void ConfigureMerrylandLighting()
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.085f, 0.088f, 0.115f);
+            LevelLighting.SetAmbient(new Color(0.085f, 0.088f, 0.115f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.055f, 0.058f, 0.075f);
+            LevelLighting.SetFogColor(new Color(0.055f, 0.058f, 0.075f));
             RenderSettings.fogDensity = 0.019f;
 
             var moonObject = new GameObject("Moon");
@@ -1283,11 +1283,11 @@ namespace ZombieHouse.EditorTools
         private static void ConfigureShipLighting()
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.06f, 0.068f, 0.08f);
+            LevelLighting.SetAmbient(new Color(0.06f, 0.068f, 0.08f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.045f, 0.052f, 0.062f);
+            LevelLighting.SetFogColor(new Color(0.045f, 0.052f, 0.062f));
             RenderSettings.fogDensity = 0.030f;
 
             var moonObject = new GameObject("Overcast");
@@ -2221,11 +2221,11 @@ namespace ZombieHouse.EditorTools
         private static void ConfigurePyramidLighting()
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.05f, 0.042f, 0.032f);
+            LevelLighting.SetAmbient(new Color(0.05f, 0.042f, 0.032f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.05f, 0.04f, 0.03f);
+            LevelLighting.SetFogColor(new Color(0.05f, 0.04f, 0.03f));
             RenderSettings.fogDensity = 0.026f;
 
             RenderSettings.skybox = null;
@@ -2552,11 +2552,11 @@ namespace ZombieHouse.EditorTools
         private static void ConfigureJungleLighting()
         {
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.045f, 0.058f, 0.046f);
+            LevelLighting.SetAmbient(new Color(0.045f, 0.058f, 0.046f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.035f, 0.048f, 0.038f);
+            LevelLighting.SetFogColor(new Color(0.035f, 0.048f, 0.038f));
 
             // Denser than the wood. Sightlines under a canopy are short, and the fog is
             // what makes a jaguar at twenty metres a shape rather than a target.
@@ -9735,6 +9735,98 @@ namespace ZombieHouse.EditorTools
             return 0;
         }
 
+        /// <summary>
+        /// Guards the colour space switch against the one failure that would take the
+        /// whole game with it.
+        ///
+        /// Ambient and fog are authored as sRGB and Unity linearises them before use. In
+        /// gamma it did not, so the number in the source WAS the contribution. Flipping to
+        /// linear reinterprets all sixteen of them at once: an ambient of 0.055 stops
+        /// contributing 0.055 and starts contributing 0.0045. Every level goes nearly
+        /// black, no line of code looks wrong, and the only symptom is that the game is
+        /// dark - in a game that is supposed to be dark.
+        ///
+        /// So this measures what the renderer will actually receive, on every level, and
+        /// holds it inside the band the eight levels were authored in. Both ends: too dark
+        /// is the failure above, and too bright is the same mistake made twice, which is
+        /// exactly what re-encoding an already-re-encoded value does.
+        ///
+        /// WHAT THIS DOES NOT CHECK. How it looks. Two runs of the same scene through a
+        /// batch-mode render came back three times apart from each other, so there is no
+        /// honest headless measurement of the final image and this does not pretend to be
+        /// one. The switch needs eyes on it.
+        /// </summary>
+        [MenuItem("Zombie House/Test Colour Space", false, 56)]
+        public static void TestColorSpace()
+        {
+            int problems = 0;
+
+            Debug.Log($"[Colour] Project is in {QualitySettings.activeColorSpace} space.");
+
+            // --- the conversion is its own inverse-in-waiting -------------------
+            // Whatever AsAuthored hands the renderer must linearise back to the number
+            // that was written, or the helper is decoration.
+            foreach (float authored in new[] { 0.032f, 0.055f, 0.09f, 0.24f, 0.29f })
+            {
+                Color encoded = LevelLighting.AsAuthored(new Color(authored, authored, authored));
+                float back = QualitySettings.activeColorSpace == ColorSpace.Linear
+                    ? Mathf.GammaToLinearSpace(encoded.r)
+                    : encoded.r;
+
+                if (Mathf.Abs(back - authored) > 0.002f)
+                {
+                    Debug.LogError($"[Colour] {authored:0.000} authored comes back as {back:0.000}. " +
+                                   "The re-encoding does not round trip, so every ambient in the " +
+                                   "game means something other than what it says.");
+                    problems++;
+                }
+            }
+
+            // --- what each level will actually receive --------------------------
+            // The band the eight levels were authored inside, measured in the light they
+            // contribute rather than in the numbers they are stored as.
+            const float Darkest = 0.02f;
+            const float Brightest = 0.40f;
+
+            foreach (var level in Levels)
+            {
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                Color stored = RenderSettings.ambientLight;
+                Color effective = QualitySettings.activeColorSpace == ColorSpace.Linear
+                    ? new Color(Mathf.GammaToLinearSpace(stored.r),
+                                Mathf.GammaToLinearSpace(stored.g),
+                                Mathf.GammaToLinearSpace(stored.b))
+                    : stored;
+
+                float luma = 0.2126f * effective.r + 0.7152f * effective.g + 0.0722f * effective.b;
+
+                Debug.Log($"[Colour] {level.Tag,-10} ambient stored {stored.r:0.000} " +
+                          $"-> contributes {luma:0.0000}");
+
+                if (luma < Darkest)
+                {
+                    Debug.LogError($"[Colour] {level.Tag} ambient contributes {luma:0.0000}, under " +
+                                   $"{Darkest:0.00}. This is the un-re-encoded failure: the level " +
+                                   "is about twelve times darker than it was authored to be.");
+                    problems++;
+                }
+                else if (luma > Brightest)
+                {
+                    Debug.LogError($"[Colour] {level.Tag} ambient contributes {luma:0.0000}, over " +
+                                   $"{Brightest:0.00}. Something has been re-encoded twice.");
+                    problems++;
+                }
+            }
+
+            if (problems == 0)
+                Debug.Log("[Colour] PASS - the conversion round trips and all 8 levels land in " +
+                          "the band they were authored in. How it LOOKS is not tested; nothing " +
+                          "headless can tell you that.");
+            else
+                Debug.LogError($"[Colour] FAIL - {problems} problem(s).");
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
@@ -10264,11 +10356,11 @@ namespace ZombieHouse.EditorTools
 
             // The roof shuts the moonlight out, so the interior leans on ambient plus the
             // point lights. Lifted from the open-roofed blockout to keep rooms readable.
-            RenderSettings.ambientLight = new Color(0.24f, 0.25f, 0.29f);
+            LevelLighting.SetAmbient(new Color(0.24f, 0.25f, 0.29f));
 
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
-            RenderSettings.fogColor = new Color(0.06f, 0.07f, 0.09f);
+            LevelLighting.SetFogColor(new Color(0.06f, 0.07f, 0.09f));
             RenderSettings.fogDensity = 0.012f;
 
             var sunObject = new GameObject("Moonlight");

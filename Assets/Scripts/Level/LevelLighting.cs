@@ -52,5 +52,45 @@ namespace ZombieHouse.Level
             light.shadowNormalBias = 0.15f;
             light.shadowNearPlane = 0.1f;
         }
+
+        /// <summary>
+        /// Re-encodes an authored light level so it still means what it meant in gamma.
+        ///
+        /// Ambient and fog colours are authored as sRGB and Unity linearises them before
+        /// using them. In gamma space it did not, so the number in the source WAS the
+        /// light contribution. Switching to linear silently reinterprets every one of
+        /// them: an ambient of 0.055 stops contributing 0.055 and starts contributing
+        /// 0.0045, which is twelve times less. Eight levels would go black, and not
+        /// because anybody decided they should.
+        ///
+        /// So the authored numbers stay meaningful and this converts them at the point of
+        /// use: the value handed to Unity is the one whose linearisation equals what was
+        /// written. Under gamma it is a no-op, which is what makes the switch reversible
+        /// without touching a single level's palette.
+        ///
+        /// This is deliberately NOT applied to light intensity. A light's intensity is a
+        /// scalar and is not colour-converted, and the rest of the difference between the
+        /// two colour spaces is a redistribution rather than a scale - at full brightness
+        /// they agree exactly, and in the falloff linear is actually the brighter of the
+        /// two. There is no single number that compensates for that, which is why nothing
+        /// here pretends there is one.
+        /// </summary>
+        public static Color AsAuthored(Color authored)
+        {
+            if (QualitySettings.activeColorSpace != ColorSpace.Linear) return authored;
+
+            return new Color(
+                Mathf.LinearToGammaSpace(authored.r),
+                Mathf.LinearToGammaSpace(authored.g),
+                Mathf.LinearToGammaSpace(authored.b),
+                authored.a);
+        }
+
+        /// <summary>The scene's ambient and fog, authored in the units they always were.</summary>
+        public static void SetAmbient(Color ambient) =>
+            RenderSettings.ambientLight = AsAuthored(ambient);
+
+        public static void SetFogColor(Color fog) =>
+            RenderSettings.fogColor = AsAuthored(fog);
     }
 }
