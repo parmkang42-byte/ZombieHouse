@@ -63,8 +63,25 @@ namespace ZombieHouse.Level
         [SerializeField] private float chandelierDrop = 1.1f;
         [SerializeField] private float lightSpacingCells = 5f;
         [SerializeField] private Color interiorLightColor = new Color(1f, 0.86f, 0.68f);
-        [SerializeField] private float interiorLightIntensity = 2.6f;
-        [SerializeField] private float interiorLightRange = 16f;
+        // Sixteen metres was eight cells in every direction, through walls, and it was
+        // only ever survivable because these lights cast no shadow — an unshadowed point
+        // light ignores geometry, so every room was being lit by seven other rooms' lamps
+        // as well as its own. With shadows on that stops, and a 16 m radius stops being
+        // generous and starts being 8.4 overlapping shadow maps at the average standing
+        // spot, against the four per-pixel lights the renderer will actually promote.
+        //
+        // Ten covers the 10 m light grid with overlap to spare and brings that to 3.5.
+        // Eleven was tried first and measured 4.1 — over, because the house has two
+        // floors and a lamp on the storey above is inside an 11 m sphere as surely as one
+        // in the next room is. Plan area alone would have said 3.8 and been wrong; this
+        // is why the number is measured rather than derived.
+        //
+        // The intensity goes up because the room genuinely does lose the borrowed light
+        // it was getting through the plaster, not to compensate for the shorter range.
+        // This pair is the house's brightness, and it is the one thing in this change
+        // that wants a human to look at it.
+        [SerializeField] private float interiorLightIntensity = 3.4f;
+        [SerializeField] private float interiorLightRange = 10f;
 
         [Header("Stairs")]
         [SerializeField] private int stepsPerFlight = 24;
@@ -949,7 +966,7 @@ namespace ZombieHouse.Level
                     light.color = interiorLightColor;
                     light.intensity = interiorLightIntensity;
                     light.range = interiorLightRange;
-                    light.shadows = LightShadows.None;
+                    LevelLighting.MakeRoomLight(light);
 
                     if (buildChandeliers) BuildChandelier(go.transform, floor, r, c);
                 }

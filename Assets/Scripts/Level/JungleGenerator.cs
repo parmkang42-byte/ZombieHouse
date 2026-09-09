@@ -672,7 +672,7 @@ namespace ZombieHouse.Level
                 light.color = gapColour;
                 light.intensity = gapIntensity;
                 light.range = gapRange;
-                light.shadows = LightShadows.None;
+                LevelLighting.MakeRoomLight(light);
             }
         }
 

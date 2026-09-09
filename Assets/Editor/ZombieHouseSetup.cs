@@ -4039,17 +4039,25 @@ namespace ZombieHouse.EditorTools
         /// Columns a given check does not care about cost it nothing; the alternative cost a
         /// whole extra copy of the level roster.
         /// </summary>
-        private static readonly (string Tag, string Scene, ZombieKind Boss, float CrowdFloor)[] Levels =
+        private static readonly (string Tag, string Scene, ZombieKind Boss, bool Indoor)[] Levels =
         {
-            ("House",     ScenePath,          ZombieKind.BossZombie,  IndoorFloor),
-            ("Forest",    ForestScenePath,    ZombieKind.BossBear,    OutdoorFloor),
-            ("Town",      TownScenePath,      ZombieKind.BossHorse,   OutdoorFloor),
-            ("School",    SchoolScenePath,    ZombieKind.BossJanitor, IndoorFloor),
-            ("Pyramid",   PyramidScenePath,   ZombieKind.BossScarab,  IndoorFloor),
-            ("Jungle",    JungleScenePath,    ZombieKind.BossJaguar,  OutdoorFloor),
-            ("Merryland", MerrylandScenePath, ZombieKind.BossMascot,  OutdoorFloor),
-            ("Cormorant", ShipScenePath,      ZombieKind.BossBosun,   IndoorFloor),
+            ("House",     ScenePath,          ZombieKind.BossZombie,  true),
+            ("Forest",    ForestScenePath,    ZombieKind.BossBear,    false),
+            ("Town",      TownScenePath,      ZombieKind.BossHorse,   false),
+            ("School",    SchoolScenePath,    ZombieKind.BossJanitor, true),
+            ("Pyramid",   PyramidScenePath,   ZombieKind.BossScarab,  true),
+            ("Jungle",    JungleScenePath,    ZombieKind.BossJaguar,  false),
+            ("Merryland", MerrylandScenePath, ZombieKind.BossMascot,  false),
+            ("Cormorant", ShipScenePath,      ZombieKind.BossBosun,   true),
         };
+
+        /// <summary>
+        /// The crowding floor a level is held to. Derived rather than stored, because the
+        /// column was only ever two values standing in for one fact — whether the level has
+        /// a roof — and Test Shadows needs that same fact for an unrelated reason. Two
+        /// checks reading one word beats two columns that have to be kept agreeing.
+        /// </summary>
+        private static float CrowdFloorFor(bool indoor) => indoor ? IndoorFloor : OutdoorFloor;
 
         /// <summary>
         /// Opens a level scene and generates its geometry, returning the source.
@@ -4161,14 +4169,16 @@ namespace ZombieHouse.EditorTools
                 float each = population > 0 ? area / population : 0f;
                 checkedLevels++;
 
+                float floor = CrowdFloorFor(level.Indoor);
+
                 Debug.Log($"[Crowding] {level.Tag,-10} {area,8:0} m²  {population,3} enemies " +
                           $"({drawn} drawn + {lurkers} placed + {boss} boss)  ->  {each,6:0.0} m² " +
-                          $"each, floor {level.CrowdFloor:0}");
+                          $"each, floor {floor:0}");
 
-                if (each >= level.CrowdFloor) continue;
+                if (each >= floor) continue;
 
                 Debug.LogError($"[Crowding] {level.Tag} gives each enemy {each:0.0} m², under its " +
-                               $"{level.CrowdFloor:0} m² floor. That is not a hard level, it is a " +
+                               $"{floor:0} m² floor. That is not a hard level, it is a " +
                                "level with no room to fight or retreat in.");
                 problems++;
             }
@@ -9232,6 +9242,136 @@ namespace ZombieHouse.EditorTools
                           "bound with normals on all five body materials.");
             else
                 Debug.LogError($"[Skin] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// How many shadow maps a level asks for, and whether anything is grounded at all.
+        ///
+        /// Every light in the game used to be created with shadows off — 161 of them —
+        /// which had two effects nobody chose. Zombies cast nothing, so they floated in
+        /// front of rooms rather than standing in them; and light passed straight through
+        /// walls, because an unshadowed point light ignores geometry, so every interior was
+        /// evenly lit from all directions by lamps in other rooms.
+        ///
+        /// Turning them on trades that for cost, and this measures the cost in the only
+        /// unit available without a GPU: how many shadow-casting lights reach a spot a
+        /// zombie actually stands on. That is the number of shadow maps the renderer is
+        /// asked to draw there, and for a point light each one is a cubemap — six faces.
+        ///
+        /// The budget is the renderer's own number. QualitySettings allows four per-pixel
+        /// lights; past that Unity demotes a light to vertex, and a demoted light casts no
+        /// shadow. So a fifth overlapping shadow caster is not a dimmer shadow, it is work
+        /// done and thrown away, and four is where the budget belongs rather than at
+        /// whatever number happens to look fine.
+        ///
+        /// It also asserts the opposite failure. A level where nothing overhead casts is a
+        /// level where the whole point of this was missed, and it would pass every other
+        /// check in the suite by being cheap.
+        /// </summary>
+        [MenuItem("Zombie House/Test Shadows", false, 53)]
+        public static void TestShadows()
+        {
+            const int PixelLightBudget = 4;
+
+            int problems = 0;
+            int checkedLevels = 0;
+
+            foreach (var level in Levels)
+            {
+                ILevelSource source = OpenLevel(level.Scene, level.Tag);
+                if (source == null) { problems++; continue; }
+
+                var casters = new List<Light>();
+                bool sky = false;
+
+                foreach (Light light in Object.FindObjectsByType<Light>(
+                             FindObjectsInactive.Include, FindObjectsSortMode.None))
+                {
+                    if (light.shadows == LightShadows.None) continue;
+
+                    if (light.type == LightType.Directional) sky = true;
+                    else casters.Add(light);
+                }
+
+                int worst = 0;
+                int unlit = 0;
+                long total = 0;
+                int samples = 0;
+
+                foreach (Vector3 spawn in source.ZombieSpawns)
+                {
+                    int overlap = 0;
+                    foreach (Light light in casters)
+                        if ((light.transform.position - spawn).sqrMagnitude < light.range * light.range)
+                            overlap++;
+
+                    if (overlap == 0) unlit++;
+                    worst = Mathf.Max(worst, overlap);
+                    total += overlap;
+                    samples++;
+                }
+
+                if (samples == 0)
+                {
+                    Debug.LogError($"[Shadows] {level.Tag} has no spawn points to measure at.");
+                    problems++;
+                    continue;
+                }
+
+                float average = total / (float)samples;
+                checkedLevels++;
+
+                Debug.Log($"[Shadows] {level.Tag,-10} {casters.Count,3} casting lights, " +
+                          $"sky {(sky ? "yes" : "no ")}  ->  {average,4:0.0} reach the average " +
+                          $"standing spot, {worst} at worst, {unlit}/{samples} reached by none.");
+
+                // --- the cost -------------------------------------------------
+                if (average > PixelLightBudget)
+                {
+                    Debug.LogError($"[Shadows] {level.Tag} asks for {average:0.0} shadow maps at the " +
+                                   $"average standing spot, over the {PixelLightBudget} per-pixel " +
+                                   "lights the renderer will promote. Everything past the fourth is " +
+                                   "a cubemap rendered and then discarded.");
+                    problems++;
+                }
+
+                // --- the point of the exercise --------------------------------
+                // Outdoors a shadow-casting sun or moon grounds everything on its own, so
+                // a spot reached by no lamp is fine there and is not fine under a roof.
+                if (!sky && unlit > samples / 2)
+                {
+                    Debug.LogError($"[Shadows] {level.Tag} leaves {unlit} of {samples} standing spots " +
+                                   "with nothing overhead that casts. A zombie there throws no " +
+                                   "shadow, which is the thing this was turned on for.");
+                    problems++;
+                }
+            }
+
+            // --- lights that must never cast ----------------------------------
+            // One shadow-casting point light per creature is six shadow map faces per
+            // creature, scaling with the horde. These exist to be seen, not to light.
+            foreach (string guid in AssetDatabase.FindAssets("t:Prefab", new[] { PrefabsFolder }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (prefab == null) continue;
+
+                foreach (Light light in prefab.GetComponentsInChildren<Light>(true))
+                {
+                    if (light.shadows == LightShadows.None) continue;
+
+                    Debug.LogError($"[Shadows] {System.IO.Path.GetFileName(path)} carries a " +
+                                   $"shadow-casting light '{light.name}'. That is six shadow map " +
+                                   "faces for every one of these in the level.");
+                    problems++;
+                }
+            }
+
+            if (problems == 0)
+                Debug.Log($"[Shadows] PASS — {checkedLevels} levels ground their enemies inside a " +
+                          $"{PixelLightBudget}-light budget, and no creature carries a caster.");
+            else
+                Debug.LogError($"[Shadows] FAIL — {problems} problem(s).");
         }
 
         private static void CreatePlaceholderMaterials()

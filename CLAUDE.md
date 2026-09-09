@@ -24,6 +24,27 @@ animated procedurally by `ZombieVisuals`. Blender is used as a *headless mesh co
 `.py` in `Tools_Props/` is the source, the `.obj` in `Assets/Resources/Props/` is a committed
 build artifact. Preserve this unless the user says they have assets to import.
 
+**A level's own lights cast shadows; anything attached to a creature, pickup or NPC does
+not.** `LevelLighting.MakeRoomLight` is the one place that decides, and `Test Shadows`
+enforces both halves. Every light in the game used to be created with `LightShadows.None`,
+which meant zombies cast nothing — a body under a lamp with no shadow floats in front of the
+room rather than standing in it — and, less obviously, that **light passed through walls**:
+an unshadowed point light ignores geometry, so the house's forty 16 m lamps were lighting
+each other's rooms through solid plaster.
+
+The budget is `pixelLightCount`, which is 4. Past the fourth per-pixel light Unity demotes
+the rest to vertex, and a demoted light casts nothing — so a fifth overlapping shadow caster
+is a cubemap rendered and thrown away, not a dimmer shadow. `Test Shadows` measures how many
+casters reach the average standing spot and holds every level to 4. The house needed its
+lamps cut from 16 m to 10 m to get there (7.9 -> 3.4). **Eleven metres was tried first and
+measured 4.1**: plan area alone predicts 3.8, and it is wrong because the house has two
+storeys and a lamp on the floor above is inside an 11 m sphere as surely as one in the next
+room. Measure it; do not derive it.
+
+A shadow-casting light on a *creature* prefab is six shadow map faces per creature and scales
+with the horde. That is why the bears' eye-glows and the pickup halos stay `None`, and why
+`Test Shadows` walks every prefab looking for one that does not.
+
 **The NavMesh baker bakes Default-layer colliders only.** Everything about props and doors
 depends on this. Doors sit on their own `Door` layer precisely so a closed door does not bake
 as a wall and seal a room.
@@ -55,8 +76,9 @@ bodies, the verify counts reachability, and neither divided one by the other.
 
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
 checks pass by not running. There is now one shared `Levels` table in `ZombieHouseSetup`
-that `Test Boss`, `Test Safe Start` and `Test Crowding` all walk — add the level there, with
-its boss kind and its crowding floor — plus the bed table in `Test Music`, which is separate
+that `Test Boss`, `Test Safe Start`, `Test Crowding` and `Test Shadows` all walk — add the
+level there, with its boss kind and whether it has a roof — plus the bed table in `Test
+Music`, which is separate
 because it is keyed on `Sfx` rather than on a scene. `Test Music`'s summary line names a
 count ("eight distinct beds") — update it, because a stale count is the tell that a level was
 added to the enum and not to the table. `Test Boss` now derives its count from the table
@@ -190,7 +212,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

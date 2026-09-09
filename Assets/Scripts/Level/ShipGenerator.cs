@@ -774,7 +774,7 @@ namespace ZombieHouse.Level
                     light.color = lampColour;
                     light.intensity = 1.35f;
                     light.range = 8.5f;
-                    light.shadows = LightShadows.None;
+                    LevelLighting.MakeRoomLight(light);
                 }
             }
         }

@@ -394,7 +394,7 @@ namespace ZombieHouse.Level
                     light.color = torchColour;
                     light.intensity = torchIntensity;
                     light.range = torchRange;
-                    light.shadows = LightShadows.None;
+                    LevelLighting.MakeRoomLight(light);
 
                     // Firelight is never still. The same component the school's failing
                     // fluorescents use, but it reads completely differently on a flame.

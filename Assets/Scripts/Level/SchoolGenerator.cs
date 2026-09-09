@@ -683,7 +683,7 @@ namespace ZombieHouse.Level
                     light.color = tubeColour;
                     light.intensity = tubeIntensity;
                     light.range = tubeRange;
-                    light.shadows = LightShadows.None;
+                    LevelLighting.MakeRoomLight(light);
 
                     if (_rng.NextDouble() < flickerShare)
                         lightObject.AddComponent<FlickeringLight>();
