@@ -9374,6 +9374,166 @@ namespace ZombieHouse.EditorTools
                 Debug.LogError($"[Shadows] FAIL — {problems} problem(s).");
         }
 
+        /// <summary>
+        /// Do the feet touch the floor that is actually under them?
+        ///
+        /// The walk cycle is two sine waves and it assumes the world is flat. Everywhere
+        /// this game is not flat - the house stairs, the pyramid ramps, the ship ladders -
+        /// that assumption puts a foot through the tread, and the shadows turned on two
+        /// commits ago make it worse rather than better: there is now a shadow on the step
+        /// with no foot standing on it.
+        ///
+        /// So this stands a walker astride a step, with one foot on the low side and one
+        /// on the high side, and measures where the soles end up. It reads the renderer
+        /// bounds rather than the bone positions, because the bone is not the part that has
+        /// to touch - the underside of the foot is - and the gap between them is exactly
+        /// the error that makes a sole hover.
+        ///
+        /// Both ends are asserted. A foot below its floor is inside the geometry; a foot
+        /// above it is hovering. Only checking one is how a fix that overshoots ships.
+        /// </summary>
+        [MenuItem("Zombie House/Test Foot Placement", false, 54)]
+        public static void TestFootPlacement()
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
+            if (prefab == null)
+            {
+                Debug.LogError("[Feet] No zombie prefab - run Build Level 1 Scene first.");
+                return;
+            }
+
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            // A floor, and a step covering everything to the walker's right. The seam runs
+            // along Z so the two feet - which are 21 cm apart across X and level with each
+            // other in Z - land on different heights. A step running the other way would
+            // put both feet on the same side of it and prove nothing.
+            const float StepHeight = 0.12f;
+
+            var ground = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            ground.name = "Ground";
+            ground.transform.position = new Vector3(0f, -0.5f, 0f);
+            ground.transform.localScale = new Vector3(40f, 1f, 40f);
+
+            var step = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            step.name = "Step";
+            step.transform.position = new Vector3(10f, -0.5f + StepHeight, 0f);
+            step.transform.localScale = new Vector3(20f, 1f, 40f);
+
+            int problems = 0;
+
+            // Placement on, then off. The second run is not decoration: it is the evidence
+            // that the first one is measuring something, and it is the state this game
+            // shipped in until now.
+            foreach (bool placement in new[] { true, false })
+            {
+                var zombie = Object.Instantiate(prefab);
+                zombie.transform.position = Vector3.zero;
+                zombie.transform.rotation = Quaternion.identity;
+
+                var agent = zombie.GetComponent<NavMeshAgent>();
+                if (agent != null) agent.enabled = false;
+
+                var visuals = zombie.GetComponent<ZombieVisuals>();
+                if (visuals == null)
+                {
+                    Debug.LogError("[Feet] Prefab has no ZombieVisuals.");
+                    Object.DestroyImmediate(zombie);
+                    problems++;
+                    break;
+                }
+
+                var so = new SerializedObject(visuals);
+                so.FindProperty("footPlacement").boolValue = placement;
+                so.ApplyModifiedPropertiesWithoutUndo();
+
+                visuals.Initialise();
+
+                // Nothing steps physics or advances Time in a batch run, so the pose is
+                // driven by hand and the transforms are pushed into the physics scene
+                // before anything raycasts against them or reads a bound.
+                Physics.SyncTransforms();
+                for (int i = 0; i < 40; i++)
+                {
+                    visuals.Tick(1f / 60f);
+                    Physics.SyncTransforms();
+                }
+
+                CheckSole(zombie, "Foot_L", 0f, placement, ref problems);
+                CheckSole(zombie, "Foot_R", StepHeight, placement, ref problems);
+
+                Object.DestroyImmediate(zombie);
+            }
+
+            if (problems == 0)
+                Debug.Log("[Feet] PASS - both soles sit on their own step, and switching " +
+                          "placement off puts them back through it.");
+            else
+                Debug.LogError($"[Feet] FAIL - {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// One sole against the floor it is standing on. With placement on this must be a
+        /// close thing in both directions; with it off, the whole point is that it is not.
+        /// </summary>
+        private static void CheckSole(GameObject zombie, string footName, float floorY,
+                                      bool placement, ref int problems)
+        {
+            Transform foot = FindDescendant(zombie.transform, footName);
+            if (foot == null)
+            {
+                Debug.LogError($"[Feet] No '{footName}' under the walker.");
+                problems++;
+                return;
+            }
+
+            var renderer = foot.GetComponent<Renderer>();
+            if (renderer == null)
+            {
+                Debug.LogError($"[Feet] '{footName}' has no renderer to measure.");
+                problems++;
+                return;
+            }
+
+            float sole = renderer.bounds.min.y;
+            float error = sole - floorY;
+
+            if (!placement)
+            {
+                Debug.Log($"[Feet] placement off: {footName} sole {error:+0.000;-0.000} m " +
+                          "from its floor.");
+                return;
+            }
+
+            // Three centimetres. Tighter than this is measuring the foot box's own corner
+            // rounding rather than the solve; looser and a sole could hover visibly.
+            const float Tolerance = 0.03f;
+
+            Debug.Log($"[Feet] placement on:  {footName} sole {error:+0.000;-0.000} m " +
+                      $"from its floor (floor {floorY:0.00}).");
+
+            if (error < -Tolerance)
+            {
+                Debug.LogError($"[Feet] {footName} is {-error:0.000} m *through* its floor. " +
+                               "A body with its feet inside the geometry reads as a decal, " +
+                               "and it now has a shadow on the step to prove it.");
+                problems++;
+            }
+            else if (error > Tolerance)
+            {
+                Debug.LogError($"[Feet] {footName} hovers {error:0.000} m above its floor. " +
+                               "Overshooting the fix is still not standing on anything.");
+                problems++;
+            }
+        }
+
+        private static Transform FindDescendant(Transform root, string name)
+        {
+            foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
+                if (t.name == name) return t;
+            return null;
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);

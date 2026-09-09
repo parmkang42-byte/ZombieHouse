@@ -58,6 +58,28 @@ namespace ZombieHouse.Enemies
         [SerializeField] private float hitJoltDegrees = 13f;
         [SerializeField] private float hitJoltSeconds = 0.22f;
 
+        [Header("Foot placement")]
+        [Tooltip("Put the feet on the floor that is actually there, rather than on the " +
+                 "floor the walk cycle assumes is there.")]
+        [SerializeField] private bool footPlacement = true;
+
+        [Tooltip("Past this, foot placement is skipped. Two raycasts per walker per frame " +
+                 "is not free, and nobody can see a foot at this range anyway.")]
+        [SerializeField] private float footPlacementDistance = 25f;
+
+        [SerializeField] private float footRayAbove = 0.7f;
+        [SerializeField] private float footRayBelow = 1.4f;
+
+        [Tooltip("How fast a foot and the hips chase the ground. Instant looks like a " +
+                 "glitch when a foot crosses a step edge.")]
+        [SerializeField] private float footFollowSpeed = 14f;
+
+        [Tooltip("How far the hips may sink so the lower foot can reach. Past this the " +
+                 "walker would be doing the splits, so the foot gives up instead.")]
+        [SerializeField] private float maxHipDrop = 0.4f;
+
+        [SerializeField] private float maxFootPitchDegrees = 38f;
+
         /// <summary>Fired each time a foot plants — audio hangs off this.</summary>
         public event Action Footstep;
 
@@ -84,6 +106,20 @@ namespace ZombieHouse.Enemies
         /// <summary>Set by the bear factory before Awake.</summary>
         public void SetQuadruped(bool value) { quadruped = value; }
 
+        private Transform _footLeft;
+        private Transform _footRight;
+        private float _thighLength;
+        private float _shinLength;
+        private float _shinLean;
+        private float _footSoleDrop;
+        private int _groundMask;
+        private float _hipDrop;
+        private float _footLift;
+        private float _footRise;
+        private float _footPitchLeft;
+        private float _footPitchRight;
+        private Camera _eye;
+
         private float _limpSeverity;
         private int _limpSide = 1;
         private float _headTilt;
@@ -92,6 +128,17 @@ namespace ZombieHouse.Enemies
         private float _pace = 1f;
 
         private void Awake()
+        {
+            Initialise();
+        }
+
+        /// <summary>
+        /// Wires up the rig and rolls this individual's gait.
+        ///
+        /// Public because Awake does not run in edit mode, and a test that wants to know
+        /// where this walker puts its feet on a staircase has to be able to pose one.
+        /// </summary>
+        public void Initialise()
         {
             _ai = GetComponent<ZombieAI>();
             _health = GetComponent<ZombieHealth>();
@@ -124,6 +171,8 @@ namespace ZombieHouse.Enemies
 
             // Desynchronise the horde — identical phase makes a crowd look like one puppet.
             _stridePhase = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+
+            CacheLegs();
         }
 
         private void OnEnable()
@@ -171,10 +220,18 @@ namespace ZombieHouse.Enemies
 
         private void Update()
         {
-            if (_dead || _bones == null || !_bones.IsComplete) return;
             if (!GameManager.GameplayActive) return;
+            Tick(Time.deltaTime);
+        }
 
-            float dt = Time.deltaTime;
+        /// <summary>
+        /// One frame of pose. Public for the same reason <see cref="Initialise"/> is:
+        /// nothing steps a MonoBehaviour in edit mode, so a test has to drive it.
+        /// </summary>
+        public void Tick(float dt)
+        {
+            if (_dead || _bones == null || !_bones.IsComplete) return;
+
             float speed = _ai != null ? _ai.PlanarSpeed : 0f;
             bool hunting = _ai != null && (_ai.State == ZombieState.Chase || _ai.State == ZombieState.Attack);
 
@@ -188,7 +245,7 @@ namespace ZombieHouse.Enemies
             if (_attackTime >= 0f) _attackTime += dt;
             if (_hitTime >= 0f) _hitTime += dt;
 
-            ApplyPose(speed);
+            ApplyPose(speed, dt);
         }
 
         private void AdvanceStride(float speed, float dt)
@@ -212,7 +269,7 @@ namespace ZombieHouse.Enemies
             }
         }
 
-        private void ApplyPose(float speed)
+        private void ApplyPose(float speed, float dt)
         {
             if (quadruped)
             {
@@ -267,6 +324,252 @@ namespace ZombieHouse.Enemies
 
             PoseArm(_bones.ShoulderLeft, _bones.ElbowLeft, armBase, -sway, elbow, _shoulderDroop);
             PoseArm(_bones.ShoulderRight, _bones.ElbowRight, armBase, sway, elbow, -_shoulderDroop * 0.4f);
+
+            // Last, because it corrects what everything above just decided.
+            PlaceFeet(dt);
+        }
+
+        // ------------------------------------------------------------ foot placement
+
+        /// <summary>
+        /// Puts the feet on the floor that is there rather than the floor the walk cycle
+        /// assumes is there.
+        ///
+        /// The walk cycle is a pair of sine waves. On flat ground that is fine, and it is
+        /// what every walker in this game has been doing; on the ship ladders, the
+        /// pyramid ramps and the house stairs it means a foot passes through the tread and
+        /// comes out below it. A body whose feet are inside the floor does not read as
+        /// heavy, it reads as a decal - and the shadows turned on in the previous commit
+        /// make that worse rather than better, because now there is a shadow sitting on
+        /// the step with no foot on it.
+        ///
+        /// TWO PASSES, AND THE ORDER MATTERS. A foot that cannot reach its step is not
+        /// fixed by stretching the leg; it is fixed by the hips coming down, which is what
+        /// a person does. So the ground under both feet is measured first, the hips sink by
+        /// however much the lower foot is short, and only then is each leg solved. Solving
+        /// the legs first and dropping the hips afterwards moves both feet again and undoes
+        /// the solve.
+        /// </summary>
+        private void PlaceFeet(float dt)
+        {
+            if (!footPlacement || _footLeft == null || _footRight == null) return;
+            if (_thighLength <= 0f || _shinLength <= 0f) return;
+
+            // Two raycasts a frame each is cheap; forty walkers' worth is not, and past
+            // about twenty-five metres nobody can tell where a foot is anyway.
+            if (_eye == null) _eye = Camera.main;
+            if (_eye != null)
+            {
+                float far = footPlacementDistance * footPlacementDistance;
+                if ((_eye.transform.position - transform.position).sqrMagnitude > far)
+                {
+                    // Unwind rather than freeze: a walker that leaves range mid-stride and
+                    // keeps a 30 cm hip drop for the rest of its life is a crouching zombie
+                    // with no explanation.
+                    Relax(dt);
+                    return;
+                }
+            }
+
+            float leftGround, rightGround, leftPitch, rightPitch;
+            bool leftFound = Probe(_footLeft, out leftGround, out leftPitch);
+            bool rightFound = Probe(_footRight, out rightGround, out rightPitch);
+
+            if (!leftFound && !rightFound) { Relax(dt); return; }
+
+            float damp = 1f - Mathf.Exp(-footFollowSpeed * dt);
+
+            // --- the hips ------------------------------------------------------
+            // How far short is each foot of its own ground? Negative means the ground is
+            // below the foot, which is the case that needs the hips.
+            float leftShort = leftFound ? leftGround - FootSole(_footLeft) : 0f;
+            float rightShort = rightFound ? rightGround - FootSole(_footRight) : 0f;
+
+            float drop = Mathf.Clamp(Mathf.Min(leftShort, rightShort), -maxHipDrop, 0f);
+            _hipDrop = Mathf.Lerp(_hipDrop, drop, damp);
+
+            // The rig's Y was set by the walk cycle's bob a few lines ago; this rides on
+            // top of it rather than replacing it, so the walker still dips as it steps.
+            Vector3 rigLocal = _bones.Rig.localPosition;
+            float scale = _bones.Rig.lossyScale.y;
+            _bones.Rig.localPosition = new Vector3(
+                rigLocal.x,
+                rigLocal.y + (scale > 1e-4f ? _hipDrop / scale : 0f),
+                rigLocal.z);
+
+            // --- the legs ------------------------------------------------------
+            // The leg first, then the ankle: levelling the foot needs the knee's final
+            // rotation, and the knee is what the solve is about to change.
+            if (leftFound)
+            {
+                SolveLeg(_bones.HipLeft, _bones.KneeLeft, _footLeft, leftGround);
+                _footPitchLeft = Mathf.Lerp(_footPitchLeft, leftPitch, damp);
+                LevelFoot(_bones.KneeLeft, _footLeft, _footPitchLeft);
+            }
+
+            if (rightFound)
+            {
+                SolveLeg(_bones.HipRight, _bones.KneeRight, _footRight, rightGround);
+                _footPitchRight = Mathf.Lerp(_footPitchRight, rightPitch, damp);
+                LevelFoot(_bones.KneeRight, _footRight, _footPitchRight);
+            }
+        }
+
+        /// <summary>
+        /// Finds the floor under one foot, and the pitch that would put the sole flat on
+        /// it. The ray starts above the foot so that a foot already buried in a step still
+        /// finds the surface it should have been standing on.
+        /// </summary>
+        private bool Probe(Transform foot, out float groundY, out float pitchDegrees)
+        {
+            groundY = 0f;
+            pitchDegrees = 0f;
+
+            Vector3 from = foot.position + Vector3.up * footRayAbove;
+            RaycastHit hit;
+            if (!Physics.Raycast(from, Vector3.down, out hit,
+                                 footRayAbove + footRayBelow, _groundMask,
+                                 QueryTriggerInteraction.Ignore))
+                return false;
+
+            groundY = hit.point.y;
+
+            // The slope, in the walker's own facing: a ramp taken head-on pitches the
+            // foot, the same ramp crossed sideways does not.
+            Vector3 slope = transform.InverseTransformDirection(hit.normal);
+            pitchDegrees = Mathf.Clamp(Mathf.Atan2(slope.z, slope.y) * Mathf.Rad2Deg,
+                                       -maxFootPitchDegrees, maxFootPitchDegrees);
+            return true;
+        }
+
+        /// <summary>
+        /// Two-bone IK, solved in the plane the leg already swings in.
+        ///
+        /// This rig only ever rotates a hip and a knee about X, so the whole leg lives in
+        /// the rig's own YZ plane, and the general three-dimensional solve - with its pole
+        /// vector and its ambiguity about which way the knee should face - simply does not
+        /// arise. What is left is the law of cosines twice, and a knee that can only bend
+        /// the way a knee bends because that is the only direction the rig can express.
+        /// </summary>
+        private void SolveLeg(Transform hip, Transform knee, Transform foot, float groundY)
+        {
+            Transform rig = _bones.Rig;
+
+            // Aim the foot pivot, not the sole. The gap between them is half the foot's
+            // thickness and nothing else, now that the ankle keeps the foot level - which
+            // matters because it makes the target a fixed point rather than one that moves
+            // every time the knee does.
+            Vector3 target = foot.position;
+            target.y = groundY + _footSoleDrop * rig.lossyScale.y;
+
+            Vector3 hipLocal = rig.InverseTransformPoint(hip.position);
+            Vector3 targetLocal = rig.InverseTransformPoint(target);
+
+            float forward = targetLocal.z - hipLocal.z;
+            float up = targetLocal.y - hipLocal.y;
+
+            float a = _thighLength;
+            float b = _shinLength;
+
+            // Clamped just inside full extension, because a leg that locks straight
+            // reads as a stilt. Two millimetres rather than the ten this started with:
+            // the margin is a floor under how accurately a foot can be placed, and at a
+            // centimetre it was the largest single error left in the standing pose. The
+            // acos calls below are guarded on their own, so this does not have to be
+            // generous to be safe.
+            float reach = Mathf.Clamp(Mathf.Sqrt(forward * forward + up * up),
+                                      Mathf.Abs(a - b) + 0.002f, a + b - 0.002f);
+
+            float kneeInterior = Mathf.Acos(
+                Mathf.Clamp((a * a + b * b - reach * reach) / (2f * a * b), -1f, 1f));
+            float hipOffset = Mathf.Acos(
+                Mathf.Clamp((a * a + reach * reach - b * b) / (2f * a * reach), -1f, 1f));
+
+            // Angle of the hip-to-target line away from straight down, positive forward.
+            float toTarget = Mathf.Atan2(forward, -up);
+
+            // The thigh leads the target line by the offset, which puts the knee in front
+            // and lets it fold backwards - the only way a leg is allowed to bend.
+            hip.localRotation = Quaternion.Euler(-(toTarget + hipOffset) * Mathf.Rad2Deg, 0f, 0f);
+
+            // Plus the shin's own lean. The law of cosines above solves a chain of two
+            // straight segments, and the lower one is not straight: the ankle sits 6 cm
+            // forward of the knee as well as below it, because that is where an ankle is.
+            // Ignoring that tilts the whole shin by about eight degrees, which over its
+            // length put every sole six centimetres under the floor - a solve that looks
+            // like it is working and is quietly wrong by the width of a step.
+            knee.localRotation = Quaternion.Euler(
+                180f - kneeInterior * Mathf.Rad2Deg + _shinLean * Mathf.Rad2Deg, 0f, 0f);
+        }
+
+        /// <summary>
+        /// World Y of the underside of a foot, which is the part that has to touch.
+        ///
+        /// Computed from the foot's own half-height rather than read off its renderer
+        /// bounds, and that is not a matter of taste. A bounding box is axis-aligned, so
+        /// the moment the foot tilts it gets *taller* - a 24 cm foot pitched twenty degrees
+        /// reports a box half again as deep as the foot is. Feeding that back in as "how
+        /// far the sole is below the pivot" makes the target move whenever the pose moves,
+        /// and the solve chases a number it is itself changing.
+        /// </summary>
+        private float FootSole(Transform foot)
+        {
+            return foot.position.y - _footSoleDrop * _bones.Rig.lossyScale.y;
+        }
+
+        /// <summary>
+        /// The ankle the rig does not have.
+        ///
+        /// The foot is parented to the knee, so without this it rotates with the shin: a
+        /// bent knee points the toe like a ballerina and drives the front of the foot
+        /// through the floor. That is not a small effect - it was most of the residual
+        /// error that made the first version of this solve look almost right.
+        ///
+        /// So the foot is given a world-space orientation instead of an inherited one:
+        /// level with the walker's own facing, pitched to whatever it is standing on.
+        /// </summary>
+        private void LevelFoot(Transform knee, Transform foot, float pitchDegrees)
+        {
+            Quaternion wanted = transform.rotation * Quaternion.Euler(pitchDegrees, 0f, 0f);
+            foot.localRotation = Quaternion.Inverse(knee.rotation) * wanted;
+        }
+
+        /// <summary>Bleeds the correction away, for a walker out of range or off the floor.</summary>
+        private void Relax(float dt)
+        {
+            float damp = 1f - Mathf.Exp(-footFollowSpeed * dt);
+            _hipDrop = Mathf.Lerp(_hipDrop, 0f, damp);
+            _footPitchLeft = Mathf.Lerp(_footPitchLeft, 0f, damp);
+            _footPitchRight = Mathf.Lerp(_footPitchRight, 0f, damp);
+        }
+
+        /// <summary>
+        /// Measures the leg once, in the rig's own units.
+        ///
+        /// The lengths are read off the transforms rather than copied from the factory's
+        /// constants, so the two cannot drift apart - and so this keeps working for the
+        /// sailors, the kids and the mascots, which are the same rig at other sizes.
+        /// </summary>
+        private void CacheLegs()
+        {
+            _groundMask = LayerMask.GetMask("Default");
+
+            if (_bones == null || _bones.KneeLeft == null || _bones.KneeRight == null) return;
+
+            _footLeft = _bones.KneeLeft.Find("Foot_L");
+            _footRight = _bones.KneeRight.Find("Foot_R");
+
+            _thighLength = _bones.KneeLeft.localPosition.magnitude;
+            _shinLength = _footLeft != null ? _footLeft.localPosition.magnitude : 0f;
+
+            // How far the ankle leans forward of straight-down, in the knee's own frame.
+            _shinLean = _footLeft != null
+                ? Mathf.Atan2(_footLeft.localPosition.z, -_footLeft.localPosition.y)
+                : 0f;
+
+            // Half the foot's thickness: how far the sole sits below the foot's pivot once
+            // the ankle is holding it level.
+            _footSoleDrop = _footLeft != null ? _footLeft.localScale.y * 0.5f : 0f;
         }
 
         /// <summary>

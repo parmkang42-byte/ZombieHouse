@@ -24,6 +24,22 @@ animated procedurally by `ZombieVisuals`. Blender is used as a *headless mesh co
 `.py` in `Tools_Props/` is the source, the `.obj` in `Assets/Resources/Props/` is a committed
 build artifact. Preserve this unless the user says they have assets to import.
 
+**The foot is parented to the knee, so it needs an ankle or it points like a ballerina.**
+`ZombieVisuals.LevelFoot` gives the foot a world-space orientation instead of an inherited
+one. Without it a bent knee drives the toe through the floor, and it was most of the residual
+error in the first version of the IK solve.
+
+**Never measure a sole from `Renderer.bounds`.** A bounding box is axis-aligned, so a tilted
+foot reports a *taller* box — a 24 cm foot pitched twenty degrees is half again as deep. Feed
+that back in as "how far the sole is below the pivot" and the target moves whenever the pose
+does, so the solve chases a number it is itself changing. Use half the foot's own scale.
+
+**The two-bone solve is 2D on purpose.** The rig only rotates hips and knees about X, so the
+leg lives in the rig's YZ plane and the general 3D solve — pole vector, knee-direction
+ambiguity — does not arise. What is left is the law of cosines twice, plus `_shinLean`: the
+ankle sits 6 cm forward of the knee as well as below it, so the lower segment is not straight
+and ignoring that tilts the shin about eight degrees.
+
 **A level's own lights cast shadows; anything attached to a creature, pickup or NPC does
 not.** `LevelLighting.MakeRoomLight` is the one place that decides, and `Test Shadows`
 enforces both halves. Every light in the game used to be created with `LightShadows.None`,
@@ -212,7 +228,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
