@@ -24,6 +24,23 @@ animated procedurally by `ZombieVisuals`. Blender is used as a *headless mesh co
 `.py` in `Tools_Props/` is the source, the `.obj` in `Assets/Resources/Props/` is a committed
 build artifact. Preserve this unless the user says they have assets to import.
 
+**A generated body mesh replaces what a part *draws*, never what it *collides* with.**
+Same rule as `PropLibrary.Dress`, one level in: `CreatePart` swaps the MeshFilter and leaves
+the primitive's own collider alone, so the head is still the sphere carrying the 2.5x critical
+and every limb is still its capsule. Nothing in `BodyMesh` ever exceeds radius 0.5 or |y| > 1
+either — geometry outside the collider is something the player can see and cannot shoot, which
+is why the skull is carved out of a 0.90 ball rather than added to a full-sized one.
+
+`Test Body Meshes` checks all of that, and a hand-built mesh needs **UVs written explicitly** —
+Unity's primitives come with them, yours does not, and a mesh without them samples the
+generated skin at one texel and looks exactly like the texturing having failed.
+
+**Zombie geometry is not baked into the scenes** (grep `m_Name: Thigh_L` — zero in all eight).
+Bodies come from the prefabs at runtime, so a change to `ZombieFactory` or `BodyMesh` needs the
+*prefabs* rebuilt, not the scenes: run all eight level builds in a stage and copy back only
+`Assets/Prefabs/` and `Assets/Resources/ProtoMeshes/`. That avoids rewriting eight scenes'
+worth of YAML for a change that does not touch them.
+
 **The foot is parented to the knee, so it needs an ankle or it points like a ballerina.**
 `ZombieVisuals.LevelFoot` gives the foot a world-space orientation instead of an inherited
 one. Without it a bent knee drives the toe through the floor, and it was most of the residual
@@ -228,7 +245,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

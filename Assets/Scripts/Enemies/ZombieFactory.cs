@@ -182,7 +182,7 @@ namespace ZombieHouse.Enemies
             // Skull is the critical hitbox; jaw and hair hang off it cosmetically.
             CreatePart(head, "Skull", PrimitiveType.Sphere,
                 new Vector3(0f, 0.08f, 0f), new Vector3(0.19f, 0.23f, 0.21f),
-                ProtoMaterials.Skin, health, 2.5f, true);
+                ProtoMaterials.Skin, health, 2.5f, true, BodyMesh.Shared(BodyMesh.Part.Skull));
             CreatePart(head, "Jaw", PrimitiveType.Cube,
                 new Vector3(0f, -0.01f, 0.05f), new Vector3(0.12f, 0.07f, 0.10f),
                 ProtoMaterials.Skin, null, 0f, false);
@@ -211,10 +211,10 @@ namespace ZombieHouse.Enemies
             shoulder.SetParent(spine, false);
             shoulder.localPosition = new Vector3(0.17f * side, ShoulderLocal, 0f);
 
-            CreatePart(shoulder, "UpperArm_" + suffix, PrimitiveType.Capsule,
+            CreatePart(shoulder, "UpperArm_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.UpperArm,
                 new Vector3(0f, -UpperArmLength * 0.5f, 0f), new Vector3(0.095f, UpperArmLength * 0.5f, 0.095f),
                 ProtoMaterials.Skin, health, 0.6f, false);
-            CreatePart(shoulder, "Sleeve_" + suffix, PrimitiveType.Capsule,
+            CreatePart(shoulder, "Sleeve_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.UpperArm,
                 new Vector3(0f, -UpperArmLength * 0.35f, 0f), new Vector3(0.11f, UpperArmLength * 0.32f, 0.11f),
                 ProtoMaterials.Shirt, null, 0f, false);
 
@@ -222,7 +222,7 @@ namespace ZombieHouse.Enemies
             elbow.SetParent(shoulder, false);
             elbow.localPosition = new Vector3(0f, -UpperArmLength, 0f);
 
-            CreatePart(elbow, "Forearm_" + suffix, PrimitiveType.Capsule,
+            CreatePart(elbow, "Forearm_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.Forearm,
                 new Vector3(0f, -ForearmLength * 0.5f, 0f), new Vector3(0.082f, ForearmLength * 0.5f, 0.082f),
                 ProtoMaterials.Skin, health, 0.6f, false);
             CreatePart(elbow, "Hand_" + suffix, PrimitiveType.Cube,
@@ -250,10 +250,10 @@ namespace ZombieHouse.Enemies
             hip.SetParent(rig, false);
             hip.localPosition = new Vector3(0.105f * side, HipHeight, 0f);
 
-            CreatePart(hip, "Thigh_" + suffix, PrimitiveType.Capsule,
+            CreatePart(hip, "Thigh_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.Thigh,
                 new Vector3(0f, -ThighLength * 0.5f, 0f), new Vector3(0.125f, ThighLength * 0.5f, 0.125f),
                 ProtoMaterials.Skin, health, 0.7f, false);
-            CreatePart(hip, "TrouserLeg_" + suffix, PrimitiveType.Capsule,
+            CreatePart(hip, "TrouserLeg_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.Thigh,
                 new Vector3(0f, -ThighLength * 0.45f, 0f), new Vector3(0.14f, ThighLength * 0.48f, 0.14f),
                 ProtoMaterials.Trousers, null, 0f, false);
 
@@ -261,7 +261,7 @@ namespace ZombieHouse.Enemies
             knee.SetParent(hip, false);
             knee.localPosition = new Vector3(0f, -ThighLength, 0f);
 
-            CreatePart(knee, "Shin_" + suffix, PrimitiveType.Capsule,
+            CreatePart(knee, "Shin_" + suffix, PrimitiveType.Capsule, BodyMesh.Part.Shin,
                 new Vector3(0f, -ShinLength * 0.5f, 0f), new Vector3(0.10f, ShinLength * 0.5f, 0.10f),
                 ProtoMaterials.Skin, health, 0.7f, false);
             CreatePart(knee, "Foot_" + suffix, PrimitiveType.Cube,
@@ -1020,10 +1020,34 @@ namespace ZombieHouse.Enemies
         /// gets a Hitbox; everything else is decoration and loses its collider so it
         /// never blocks a bullet meant for the body underneath.
         /// </summary>
+        /// <summary>
+        /// The limb form of CreatePart. The part enum sits second, next to the primitive
+        /// it overrides, rather than last behind six positional arguments where nobody
+        /// reading the call can see which shape a limb is getting.
+        /// </summary>
         private static GameObject CreatePart(Transform parent, string name, PrimitiveType type,
+                                             BodyMesh.Part part,
                                              Vector3 localPosition, Vector3 localScale,
                                              Material material, ZombieHealth health,
                                              float hitMultiplier, bool critical)
+        {
+            return CreatePart(parent, name, type, localPosition, localScale,
+                              material, health, hitMultiplier, critical, BodyMesh.Shared(part));
+        }
+
+        /// <param name="mesh">
+        /// Replaces what the part *draws* and deliberately not what it *collides* with.
+        /// The primitive's own collider is left exactly as it was, so a generated thigh is
+        /// still a capsule to shoot at and a generated skull is still the sphere that
+        /// carries the critical multiplier. Same rule as PropLibrary.Dress, same reason:
+        /// hitboxes are gameplay and silhouette is not, and a change of shape must never
+        /// quietly become a change of difficulty.
+        /// </param>
+        private static GameObject CreatePart(Transform parent, string name, PrimitiveType type,
+                                             Vector3 localPosition, Vector3 localScale,
+                                             Material material, ZombieHealth health,
+                                             float hitMultiplier, bool critical,
+                                             Mesh mesh = null)
         {
             var part = GameObject.CreatePrimitive(type);
             part.name = name;
@@ -1031,6 +1055,8 @@ namespace ZombieHouse.Enemies
             part.transform.localPosition = localPosition;
             part.transform.localScale = localScale;
             part.GetComponent<MeshRenderer>().sharedMaterial = material;
+
+            if (mesh != null) part.GetComponent<MeshFilter>().sharedMesh = mesh;
 
             var collider = part.GetComponent<Collider>();
 

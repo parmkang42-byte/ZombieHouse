@@ -29,6 +29,7 @@ namespace ZombieHouse.EditorTools
         private const string MaterialsFolder = "Assets/Resources/ProtoMaterials";
         private const string MeshesFolder = "Assets/Meshes";
         private const string TexturesFolder = "Assets/Resources/ProtoTextures";
+        private const string BodyMeshFolder = "Assets/Resources/ProtoMeshes";
         private const string ScenePath = ScenesFolder + "/Level1_House.unity";
         private const string ForestScenePath = ScenesFolder + "/Level2_Forest.unity";
         private const string TownScenePath = ScenesFolder + "/Level3_Town.unity";
@@ -101,6 +102,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);   // the weapon camera renders only this layer
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject zombiePrefab = BuildZombiePrefab(enemyLayer);
@@ -164,6 +166,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject zombiePrefab = BuildZombiePrefab(enemyLayer);
@@ -396,6 +399,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject cowboyPrefab = BuildCowboyPrefab(enemyLayer);
@@ -773,6 +777,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject teacherPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Teacher, TeacherPrefabPath);
@@ -1016,6 +1021,7 @@ namespace ZombieHouse.EditorTools
             EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject mousePrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.MascotMouse,
@@ -1231,6 +1237,7 @@ namespace ZombieHouse.EditorTools
             EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             // The crew. Two of them: the deckhand carries the level and the officer is the
@@ -2172,6 +2179,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject mummyPrefab = BuildSchoolPrefab(enemyLayer, ZombieOutfit.Mummy, MummyPrefabPath);
@@ -2499,6 +2507,7 @@ namespace ZombieHouse.EditorTools
             int doorLayer = EnsureLayer(DoorLayerName);
 
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
 
             GameObject zombiePrefab = BuildZombiePrefab(enemyLayer);
@@ -6429,6 +6438,7 @@ namespace ZombieHouse.EditorTools
         {
             int enemyLayer = EnsureLayer(EnemyLayerName);
             CreatePlaceholderMaterials();
+            CreateBodyMeshes();
             ProtoMaterials.ClearCache();
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -9532,6 +9542,197 @@ namespace ZombieHouse.EditorTools
             foreach (Transform t in root.GetComponentsInChildren<Transform>(true))
                 if (t.name == name) return t;
             return null;
+        }
+
+        /// <summary>
+        /// Writes the generated body meshes out as assets.
+        ///
+        /// Third time this rule appears in this file, one level deeper each time. A mesh
+        /// built in memory does not survive being saved into a prefab any more than a
+        /// material or a texture does; the prefab ships referring to nothing and the limb
+        /// renders as a hole rather than as magenta, which is if anything harder to spot.
+        /// BodyMesh.Shared prefers the asset and falls back to building one, so play mode
+        /// works before this has ever run.
+        /// </summary>
+        private static void CreateBodyMeshes()
+        {
+            EnsureFolder(BodyMeshFolder);
+
+            foreach (BodyMesh.Part part in System.Enum.GetValues(typeof(BodyMesh.Part)))
+            {
+                string path = BodyMeshFolder + "/" + part.ToString().ToLowerInvariant() + ".asset";
+                if (AssetDatabase.LoadAssetAtPath<Mesh>(path) != null) continue;
+
+                Mesh mesh = BodyMesh.Build(part);
+                AssetDatabase.CreateAsset(mesh, path);
+            }
+
+            AssetDatabase.SaveAssets();
+            BodyMesh.ClearCache();
+        }
+
+        /// <summary>
+        /// Proves the generated body geometry is a change of shape and not a change of
+        /// difficulty.
+        ///
+        /// THE COLLIDERS. Every one of these replaces a primitive's mesh and leaves its
+        /// collider alone, which is the only reason this was safe to do at all: the head
+        /// is still the sphere carrying the 2.5x critical multiplier and every limb is
+        /// still the capsule it was. If a mesh swap ever took the collider with it, the
+        /// game would look better and play differently, and the second half of that
+        /// sentence is the one nobody would notice for a month.
+        ///
+        /// STAYING INSIDE IT. A vertex outside the collider is geometry you can see and
+        /// cannot shoot. Every profile is built to reach 1.0 at most for that reason, and
+        /// this measures the built result rather than trusting the arithmetic that was
+        /// supposed to guarantee it.
+        ///
+        /// THE UVs. These arrived one commit after the bodies were given generated skin,
+        /// and a mesh with no UVs samples that texture at a single point — a limb in one
+        /// flat colour, which looks like the texturing simply failed. Unity's primitives
+        /// come with UVs; a mesh built by hand only has them if somebody wrote them.
+        ///
+        /// AND THAT THEY TAPER. A generated limb that came out the same width top and
+        /// bottom would pass every check above by being a capsule, which is what this was
+        /// meant to stop being.
+        /// </summary>
+        [MenuItem("Zombie House/Test Body Meshes", false, 55)]
+        public static void TestBodyMeshes()
+        {
+            int problems = 0;
+
+            foreach (BodyMesh.Part part in System.Enum.GetValues(typeof(BodyMesh.Part)))
+            {
+                Mesh mesh = BodyMesh.Shared(part);
+                if (mesh == null)
+                {
+                    Debug.LogError($"[Body] No mesh for {part}.");
+                    problems++;
+                    continue;
+                }
+
+                Vector3[] vertices = mesh.vertices;
+                Vector2[] uv = mesh.uv;
+
+                if (uv == null || uv.Length != vertices.Length)
+                {
+                    Debug.LogError($"[Body] {part} has no UVs. The generated skin would sample " +
+                                   "one texel across the whole part, which looks exactly like " +
+                                   "the texturing having failed.");
+                    problems++;
+                }
+
+                // Inside the primitive it replaces: radius 0.5 around Y, and |y| <= 1.
+                float widest = 0f;
+                float tallest = 0f;
+                foreach (Vector3 v in vertices)
+                {
+                    widest = Mathf.Max(widest, new Vector2(v.x, v.z).magnitude);
+                    tallest = Mathf.Max(tallest, Mathf.Abs(v.y));
+                }
+
+                if (widest > 0.5f + 1e-3f || tallest > 1f + 1e-3f)
+                {
+                    Debug.LogError($"[Body] {part} reaches {widest:0.000} wide and {tallest:0.000} " +
+                                   "tall, outside the primitive it replaces. That is geometry the " +
+                                   "player can see and cannot hit.");
+                    problems++;
+                }
+
+                if (part == BodyMesh.Part.Skull)
+                {
+                    Debug.Log($"[Body] {part,-9} {vertices.Length,4} verts, " +
+                              $"{mesh.triangles.Length / 3,4} tris, widest {widest:0.000}.");
+                    continue;
+                }
+
+                // A limb has to actually narrow. Compare the ring nearest the joint end
+                // with the ring nearest the far end, ignoring the rounded caps.
+                float nearJoint = RadiusNear(vertices, 0.72f);
+                float farEnd = RadiusNear(vertices, -0.72f);
+
+                if (farEnd >= nearJoint * 0.92f)
+                {
+                    Debug.LogError($"[Body] {part} is {nearJoint:0.000} at the joint and " +
+                                   $"{farEnd:0.000} at the far end — that is a tube. The point of " +
+                                   "this was to stop being a tube.");
+                    problems++;
+                }
+
+                Debug.Log($"[Body] {part,-9} {vertices.Length,4} verts, " +
+                          $"{mesh.triangles.Length / 3,4} tris, " +
+                          $"{nearJoint:0.000} -> {farEnd:0.000} " +
+                          $"({(1f - farEnd / nearJoint) * 100f:0} % taper).");
+            }
+
+            // --- the hitboxes on the real thing ------------------------------
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
+            if (prefab == null)
+            {
+                Debug.LogError("[Body] No zombie prefab — run Build Level 1 Scene first.");
+                problems++;
+            }
+            else
+            {
+                problems += CheckCollider(prefab, "Skull", typeof(SphereCollider));
+                problems += CheckCollider(prefab, "Thigh_L", typeof(CapsuleCollider));
+                problems += CheckCollider(prefab, "Shin_R", typeof(CapsuleCollider));
+                problems += CheckCollider(prefab, "UpperArm_L", typeof(CapsuleCollider));
+                problems += CheckCollider(prefab, "Forearm_R", typeof(CapsuleCollider));
+            }
+
+            if (problems == 0)
+                Debug.Log("[Body] PASS — limbs taper, everything stays inside its own collider, " +
+                          "and the hitboxes are the primitives they always were.");
+            else
+                Debug.LogError($"[Body] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>Mean radius of the vertices nearest one height on a limb.</summary>
+        private static float RadiusNear(Vector3[] vertices, float y)
+        {
+            float total = 0f;
+            int count = 0;
+
+            foreach (Vector3 v in vertices)
+            {
+                if (Mathf.Abs(v.y - y) > 0.08f) continue;
+                total += new Vector2(v.x, v.z).magnitude;
+                count++;
+            }
+
+            return count > 0 ? total / count : 0f;
+        }
+
+        private static int CheckCollider(GameObject prefab, string partName, System.Type expected)
+        {
+            Transform part = null;
+            foreach (Transform t in prefab.GetComponentsInChildren<Transform>(true))
+                if (t.name == partName) { part = t; break; }
+
+            if (part == null)
+            {
+                Debug.LogError($"[Body] No '{partName}' on the zombie prefab.");
+                return 1;
+            }
+
+            var collider = part.GetComponent<Collider>();
+            if (collider == null)
+            {
+                Debug.LogError($"[Body] '{partName}' lost its collider to the mesh swap. " +
+                               "It is no longer possible to shoot.");
+                return 1;
+            }
+
+            if (collider.GetType() != expected)
+            {
+                Debug.LogError($"[Body] '{partName}' collides as {collider.GetType().Name}, " +
+                               $"expected {expected.Name}. The silhouette was allowed to change " +
+                               "the hitbox, which is a change to how the game plays.");
+                return 1;
+            }
+
+            return 0;
         }
 
         private static void CreatePlaceholderMaterials()
