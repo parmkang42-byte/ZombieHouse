@@ -2,7 +2,7 @@
 
 First-person zombie shooter. Unity 6.5 (6000.5.8f1), Built-in Render Pipeline, C#.
 
-**Project lives at `C:\Users\parmk\UnityProjects\ZombieHouse` — deliberately not in OneDrive.**
+**Project lives at `C:\Users\<user>\Dev\ZombieHouse` — deliberately not in OneDrive.**
 Unity rewrites `Library/` constantly; OneDrive sync locks those files mid-import and corrupts
 the project. If you want cloud backup, back up `Assets/`, `Packages/` and `ProjectSettings/`
 only — everything else regenerates.

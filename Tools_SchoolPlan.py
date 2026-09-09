@@ -3,6 +3,7 @@
 reaches Unity: every row the same length, every room connected to the corridor,
 and the power cell candidates spread away from the motor."""
 import io
+import os
 
 W = 42          # columns
 ROOM_SPLITS = [10, 16, 23, 30, 36]   # wall columns dividing the wings into rooms
@@ -218,7 +219,12 @@ for i, row in enumerate(rows):
     print('%2d %s' % (i, row))
 
 # --- write it into the generator -------------------------------------------
-p = r'C:\Users\parmk\UnityProjects\ZombieHouse\Assets\Scripts\Level\SchoolGenerator.cs'
+# Relative to this script, which sits at the repo root. This used to be an
+# absolute path into one particular machine's home directory, which was wrong
+# twice over: it named a user, and it named UnityProjects -- a folder this
+# project moved out of in September 2026, so the tool pointed at nothing.
+p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 'Assets', 'Scripts', 'Level', 'SchoolGenerator.cs')
 s = io.open(p, encoding='utf-8').read()
 
 head = s.index('private string[] rows =')

@@ -12,6 +12,7 @@ refuses to write anything out if one cell is unreachable.
 """
 import io
 import random
+import os
 
 random.seed(20260821)
 
@@ -248,7 +249,12 @@ for i, row in enumerate(rows):
     print('%2d %s' % (i, row))
 
 # --- write it into the generator ------------------------------------------------
-p = r'C:\Users\parmk\UnityProjects\ZombieHouse\Assets\Scripts\Level\PyramidGenerator.cs'
+# Relative to this script, which sits at the repo root. This used to be an
+# absolute path into one particular machine's home directory, which was wrong
+# twice over: it named a user, and it named UnityProjects -- a folder this
+# project moved out of in September 2026, so the tool pointed at nothing.
+p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 'Assets', 'Scripts', 'Level', 'PyramidGenerator.cs')
 s = io.open(p, encoding='utf-8').read()
 
 head = s.index('private string[] rows =')
