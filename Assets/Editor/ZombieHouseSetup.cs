@@ -28,6 +28,7 @@ namespace ZombieHouse.EditorTools
         private const string PrefabsFolder = "Assets/Prefabs";
         private const string MaterialsFolder = "Assets/Resources/ProtoMaterials";
         private const string MeshesFolder = "Assets/Meshes";
+        private const string TexturesFolder = "Assets/Resources/ProtoTextures";
         private const string ScenePath = ScenesFolder + "/Level1_House.unity";
         private const string ForestScenePath = ScenesFolder + "/Level2_Forest.unity";
         private const string TownScenePath = ScenesFolder + "/Level3_Town.unity";
@@ -9092,6 +9093,147 @@ namespace ZombieHouse.EditorTools
             }
         }
 
+        /// <summary>
+        /// Proves the generated surfaces do the three things they claim, none of which is
+        /// visible by looking at a material in the inspector and seeing a texture in the slot.
+        ///
+        /// THE ROUND TRIP. The albedo is a multiplier that averages white, packed into
+        /// bytes by dividing it down by its own peak, and the material colour is multiplied
+        /// back up by that peak. If those two numbers ever stop agreeing, every body in the
+        /// game shifts tone — subtly, uniformly, and with nothing to point at, because each
+        /// material still looks entirely reasonable on its own. This measures the decoded
+        /// mean and asserts the product is 1.
+        ///
+        /// THE SEAM. These tile two to four times across a limb, so a discontinuity at the
+        /// wrap would draw a line down every zombie in the game. Rather than eyeballing it,
+        /// this compares the step across the wrap against the average step between
+        /// neighbouring columns inside the texture: on a seamless map they are the same size,
+        /// and on a seamed one the wrap is many times larger.
+        ///
+        /// THE MAPS ARE NOT BLANK. A generator that returned a constant would pass both of
+        /// the above — a flat grey multiplier round-trips perfectly and has no seam. So the
+        /// variation is measured too, and required to be real.
+        /// </summary>
+        [MenuItem("Zombie House/Test Skin", false, 52)]
+        public static void TestSkin()
+        {
+            int problems = 0;
+
+            var kinds = new[]
+            {
+                ProtoMaterials.SurfaceKind.Flesh,
+                ProtoMaterials.SurfaceKind.Cloth,
+                ProtoMaterials.SurfaceKind.Hair
+            };
+
+            foreach (ProtoMaterials.SurfaceKind kind in kinds)
+            {
+                ZombieHouse.Fx.ProtoSkin.Surface surface = ProtoMaterials.SurfaceFor(kind);
+
+                Color[] pixels = surface.Albedo.GetPixels();
+                int size = surface.Albedo.width;
+
+                // --- the round trip ------------------------------------------
+                double sum = 0d;
+                foreach (Color c in pixels) sum += (c.r + c.g + c.b) / 3d;
+                float mean = (float)(sum / pixels.Length);
+                float restored = mean * surface.Headroom;
+
+                if (Mathf.Abs(restored - 1f) > 0.02f)
+                {
+                    Debug.LogError($"[Skin] {kind} albedo decodes to {restored:0.000} rather than 1.000. " +
+                                   "Every material wearing it will render that far off the tone it " +
+                                   "had when it was flat.");
+                    problems++;
+                }
+
+                // --- the seam ------------------------------------------------
+                double wrapStep = 0d, interiorStep = 0d;
+                for (int y = 0; y < size; y++)
+                {
+                    wrapStep += Mathf.Abs(pixels[y * size].r - pixels[y * size + size - 1].r);
+                    for (int x = 0; x < size - 1; x++)
+                        interiorStep += Mathf.Abs(pixels[y * size + x].r - pixels[y * size + x + 1].r);
+                }
+                wrapStep /= size;
+                interiorStep /= (double)size * (size - 1);
+
+                // Three times the ordinary step is generous — a genuine seam runs an order
+                // of magnitude over — but tight enough to catch a lattice that fails to wrap.
+                if (interiorStep > 1e-6 && wrapStep > interiorStep * 3d)
+                {
+                    Debug.LogError($"[Skin] {kind} does not tile: the step across the wrap is " +
+                                   $"{wrapStep:0.0000} against {interiorStep:0.0000} between " +
+                                   "neighbouring columns inside it. That is a visible line down " +
+                                   "every body using this map.");
+                    problems++;
+                }
+
+                // --- there is actually something there -----------------------
+                double variance = 0d;
+                foreach (Color c in pixels)
+                {
+                    double d = (c.r + c.g + c.b) / 3d - mean;
+                    variance += d * d;
+                }
+                float deviation = Mathf.Sqrt((float)(variance / pixels.Length));
+
+                if (deviation < 0.02f)
+                {
+                    Debug.LogError($"[Skin] {kind} albedo varies by only {deviation:0.0000}. " +
+                                   "That is a flat colour with a texture's overheads.");
+                    problems++;
+                }
+
+                Debug.Log($"[Skin] {kind}: decodes to {restored:0.000}, varies {deviation:0.000}, " +
+                          $"wrap step {wrapStep:0.0000} vs {interiorStep:0.0000} interior.");
+            }
+
+            // --- the assets are wired ----------------------------------------
+            // In memory is not the question. These are read back off disk, because a
+            // material is correct in memory at the moment it is built and that is exactly
+            // when it is least worth asking.
+            string[] bodies = { "skin", "shirt", "trousers", "gore", "hair" };
+
+            foreach (string key in bodies)
+            {
+                var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialsFolder + "/" + key + ".mat");
+                if (material == null)
+                {
+                    Debug.LogError($"[Skin] No material asset for '{key}'. Anything saved into a " +
+                                   "prefab wearing it ships with a dangling reference.");
+                    problems++;
+                    continue;
+                }
+
+                if (material.mainTexture == null)
+                {
+                    Debug.LogError($"[Skin] '{key}' has no albedo map — it is still flat.");
+                    problems++;
+                }
+
+                if (!material.HasProperty("_BumpMap") || material.GetTexture("_BumpMap") == null)
+                {
+                    Debug.LogError($"[Skin] '{key}' has no normal map. The albedo alone gives " +
+                                   "pigment with no relief, which reads as a printed decal.");
+                    problems++;
+                }
+                else if (!material.IsKeywordEnabled("_NORMALMAP"))
+                {
+                    Debug.LogError($"[Skin] '{key}' has a normal map bound with _NORMALMAP off. " +
+                                   "Standard compiles that path out, so it costs memory and does " +
+                                   "nothing — which looks exactly like not having one.");
+                    problems++;
+                }
+            }
+
+            if (problems == 0)
+                Debug.Log("[Skin] PASS — three surfaces tile, decode to their own tone, and are " +
+                          "bound with normals on all five body materials.");
+            else
+                Debug.LogError($"[Skin] FAIL — {problems} problem(s).");
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
@@ -9324,11 +9466,21 @@ namespace ZombieHouse.EditorTools
             CreateMaterial("linen", new Color(0.62f, 0.60f, 0.56f), 0.08f, 0f);
 
             // Walker palette.
-            CreateMaterial("skin", new Color(0.55f, 0.56f, 0.48f), 0.10f, 0f);
-            CreateMaterial("shirt", new Color(0.21f, 0.20f, 0.18f), 0.04f, 0f);
-            CreateMaterial("trousers", new Color(0.17f, 0.18f, 0.21f), 0.04f, 0f);
-            CreateMaterial("gore", new Color(0.26f, 0.03f, 0.03f), 0.30f, 0f);
-            CreateMaterial("hair", new Color(0.11f, 0.09f, 0.08f), 0.06f, 0f);
+            // The five that every body in the game is made of, and the only five that
+            // carry generated surface detail. Their colours are unchanged from when they
+            // were flat; CreateTexturedMaterial multiplies each one back up by the
+            // texture's own encoding factor, so the tone that lands on screen is the tone
+            // that landed before. See ProtoSkin for why that round trip exists.
+            CreateTexturedMaterial("skin", new Color(0.55f, 0.56f, 0.48f),
+                                   ProtoMaterials.SurfaceKind.Flesh, 2f, 0.10f, 0f);
+            CreateTexturedMaterial("shirt", new Color(0.21f, 0.20f, 0.18f),
+                                   ProtoMaterials.SurfaceKind.Cloth, 3f, 0.04f, 0f);
+            CreateTexturedMaterial("trousers", new Color(0.17f, 0.18f, 0.21f),
+                                   ProtoMaterials.SurfaceKind.Cloth, 3f, 0.04f, 0f);
+            CreateTexturedMaterial("gore", new Color(0.26f, 0.03f, 0.03f),
+                                   ProtoMaterials.SurfaceKind.Flesh, 1.5f, 0.30f, 0f);
+            CreateTexturedMaterial("hair", new Color(0.11f, 0.09f, 0.08f),
+                                   ProtoMaterials.SurfaceKind.Hair, 1.5f, 0.06f, 0f);
             CreateMaterial("blade", new Color(0.62f, 0.64f, 0.68f), 0.75f, 0.9f);
 
             // Scope glass: alpha blending has to be switched on explicitly, not just by
@@ -9338,6 +9490,96 @@ namespace ZombieHouse.EditorTools
             EditorUtility.SetDirty(glass);
 
             AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>
+        /// A material asset wearing generated surface detail.
+        ///
+        /// The textures have to be real assets, for exactly the reason the materials do.
+        /// ProtoMaterials will happily build both in memory when the assets are missing,
+        /// and an in-memory texture does not survive being saved into a prefab any more
+        /// than an in-memory material does — the prefab ships with a dangling map. That
+        /// is the failure that put the jungle creatures and both sailors on screen in
+        /// magenta, one level deeper.
+        ///
+        /// The normal maps go through the importer rather than being written as raw
+        /// Texture2D assets, because the encoding a normal map needs is platform-specific
+        /// (desktop wants the x in alpha and the y in green) and the importer is the thing
+        /// that knows. Hand-packing it works until someone builds for a platform where it
+        /// does not, and then the lighting is subtly inside out with nothing to point at.
+        /// </summary>
+        private static Material CreateTexturedMaterial(string key, Color color,
+                                                       ProtoMaterials.SurfaceKind kind, float tiling,
+                                                       float smoothness, float metallic)
+        {
+            string path = MaterialsFolder + "/" + key + ".mat";
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+
+            // These five materials already existed as flat assets before they had any
+            // detail, so this cannot take CreateMaterial's "already there, nothing to do"
+            // shortcut: every one of them is already there, and every one of them needs
+            // upgrading exactly once.
+            Material material = existing != null
+                ? existing
+                : CreateMaterial(key, color, smoothness, metallic);
+
+            // Exactly once is the operative part. ApplySurface multiplies the colour by the
+            // encoding factor, which is only the right thing to do to a colour that has not
+            // already had it done — twice over and the material renders about 40% too
+            // bright. A bound albedo is the evidence that it has been through here before.
+            if (material.mainTexture != null) return material;
+
+            var surface = new ZombieHouse.Fx.ProtoSkin.Surface
+            {
+                Albedo = LoadOrWriteTexture(kind, false),
+                Normal = LoadOrWriteTexture(kind, true),
+                Headroom = ProtoMaterials.SurfaceFor(kind).Headroom
+            };
+
+            ProtoMaterials.ApplySurface(material, surface, tiling);
+            EditorUtility.SetDirty(material);
+            return material;
+        }
+
+        /// <summary>
+        /// Writes one generated map out as a .png the first time it is asked for, and
+        /// loads it every time after. Deterministic seeds mean the bytes never change, so
+        /// this runs once in the project's life and then costs a file read.
+        /// </summary>
+        private static Texture2D LoadOrWriteTexture(ProtoMaterials.SurfaceKind kind, bool normal)
+        {
+            EnsureFolder(TexturesFolder);
+
+            string name = kind.ToString().ToLowerInvariant() + (normal ? "_normal" : "_albedo");
+            string path = TexturesFolder + "/" + name + ".png";
+
+            var loaded = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (loaded != null) return loaded;
+
+            var surface = ProtoMaterials.SurfaceFor(kind);
+            Texture2D source = normal ? surface.Normal : surface.Albedo;
+
+            System.IO.File.WriteAllBytes(path, source.EncodeToPNG());
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (importer != null)
+            {
+                importer.textureType = normal ? TextureImporterType.NormalMap
+                                              : TextureImporterType.Default;
+                importer.wrapMode = TextureWrapMode.Repeat;
+                importer.filterMode = FilterMode.Bilinear;
+                importer.mipmapEnabled = true;
+
+                // The albedo is a colour multiplier and belongs in sRGB; the normal map is
+                // vectors and must not be gamma-corrected on the way in, which the
+                // NormalMap texture type already implies but is worth being explicit about.
+                importer.sRGBTexture = !normal;
+
+                importer.SaveAndReimport();
+            }
+
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }
 
         private static Material CreateMaterial(string key, Color color, float smoothness, float metallic)

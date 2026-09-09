@@ -117,6 +117,147 @@ namespace ZombieHouse.Level
             if (material.HasProperty("_Color")) material.SetColor("_Color", color);
         }
 
+        // ------------------------------------------------------------ generated surfaces
+
+        /// <summary>Which of the generated detail surfaces a material wears.</summary>
+        public enum SurfaceKind { Flesh, Cloth, Hair }
+
+        /// <summary>
+        /// Fixed seeds, so a rebuild produces byte-identical textures.
+        ///
+        /// This matters more than it sounds. The generated maps are written out as .png
+        /// assets and committed; if the seed moved, every rebuild would rewrite them and
+        /// each commit would carry a few hundred kilobytes of binary churn that no one
+        /// could review. The same reasoning as the scenes being committed, for the same
+        /// reason: generated, but canonical.
+        /// </summary>
+        private static readonly System.Collections.Generic.Dictionary<SurfaceKind, int> Seeds =
+            new System.Collections.Generic.Dictionary<SurfaceKind, int>
+            {
+                { SurfaceKind.Flesh, 1701 },
+                { SurfaceKind.Cloth, 2203 },
+                { SurfaceKind.Hair, 3307 }
+            };
+
+        private static readonly System.Collections.Generic.Dictionary<SurfaceKind, Fx.ProtoSkin.Surface>
+            Surfaces = new System.Collections.Generic.Dictionary<SurfaceKind, Fx.ProtoSkin.Surface>();
+
+        /// <summary>
+        /// The generated albedo and normal for one kind of surface, built once.
+        ///
+        /// The null check on the cached entry is not paranoia: a Texture2D made in code
+        /// is not an asset, so Unity destroys it on scene load, and a cache holding the
+        /// corpse of one hands out a material with a dangling map. Everything here is
+        /// therefore marked DontSave as well — it must survive a scene change, and it
+        /// must never be written into a scene file, which is the other half of the same
+        /// problem and the one that ships magenta.
+        /// </summary>
+        public static Fx.ProtoSkin.Surface SurfaceFor(SurfaceKind kind)
+        {
+            Fx.ProtoSkin.Surface cached;
+            if (Surfaces.TryGetValue(kind, out cached)
+                && cached.Albedo != null && cached.Normal != null)
+                return cached;
+
+            int seed = Seeds[kind];
+            Fx.ProtoSkin.Surface surface;
+
+            switch (kind)
+            {
+                case SurfaceKind.Cloth: surface = Fx.ProtoSkin.Cloth(seed); break;
+                case SurfaceKind.Hair: surface = Fx.ProtoSkin.Hair(seed); break;
+                default: surface = Fx.ProtoSkin.Flesh(seed); break;
+            }
+
+            surface.Albedo.hideFlags = HideFlags.HideAndDontSave;
+            surface.Normal.hideFlags = HideFlags.HideAndDontSave;
+
+            Surfaces[kind] = surface;
+            return surface;
+        }
+
+        /// <summary>
+        /// Puts the generated maps onto a material and corrects its colour for them.
+        ///
+        /// The correction is the whole point of the encoding. The albedo averages to
+        /// white before it is packed into bytes and is divided down by its own peak to
+        /// fit; multiplying the colour by that same peak here means the textured material
+        /// averages out to exactly the tone the flat one had. Every walker in the game got
+        /// surface detail without one line of the palette above being touched.
+        ///
+        /// Shared by the runtime fallback and by the editor's asset writer, so the two can
+        /// not drift into disagreeing about what a textured material is — which is the
+        /// failure that put the sailors on the ship in magenta.
+        /// </summary>
+        public static void ApplySurface(Material material, Fx.ProtoSkin.Surface surface, float tiling)
+        {
+            if (material == null || surface.Albedo == null) return;
+
+            Color corrected = material.HasProperty("_Color")
+                ? material.GetColor("_Color")
+                : Color.white;
+            corrected = new Color(corrected.r * surface.Headroom,
+                                  corrected.g * surface.Headroom,
+                                  corrected.b * surface.Headroom,
+                                  corrected.a);
+            SetColor(material, corrected);
+
+            var scale = new Vector2(tiling, tiling);
+
+            if (material.HasProperty("_MainTex"))
+            {
+                material.SetTexture("_MainTex", surface.Albedo);
+                material.SetTextureScale("_MainTex", scale);
+            }
+            if (material.HasProperty("_BaseMap"))
+            {
+                material.SetTexture("_BaseMap", surface.Albedo);
+                material.SetTextureScale("_BaseMap", scale);
+            }
+
+            if (material.HasProperty("_BumpMap"))
+            {
+                material.SetTexture("_BumpMap", surface.Normal);
+                material.SetTextureScale("_BumpMap", scale);
+
+                // Standard compiles the normal-map path out unless the keyword is on, so
+                // without this the map is bound, costs memory, and does nothing at all.
+                material.EnableKeyword("_NORMALMAP");
+                if (material.HasProperty("_BumpScale")) material.SetFloat("_BumpScale", 1f);
+            }
+        }
+
+        /// <summary>
+        /// A material with generated surface detail. Falls back to building one in memory
+        /// exactly as <see cref="Get"/> does, so play mode works before a build has ever
+        /// written the .mat assets.
+        /// </summary>
+        public static Material GetTextured(string key, Color color, SurfaceKind kind, float tiling,
+                                           float smoothness = 0.1f, float metallic = 0f)
+        {
+            Material existing;
+            if (Cache.TryGetValue(key, out existing) && existing != null) return existing;
+
+            var asset = Resources.Load<Material>("ProtoMaterials/" + key);
+            if (asset != null)
+            {
+                Cache[key] = asset;
+                return asset;
+            }
+
+            var material = new Material(LitShader) { name = "Proto_" + key };
+            SetColor(material, color);
+
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", smoothness);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", metallic);
+
+            ApplySurface(material, SurfaceFor(kind), tiling);
+
+            Cache[key] = material;
+            return material;
+        }
+
         // Shared palette for the house blockout.
         public static Material Floor => Get("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f);
 
@@ -155,11 +296,27 @@ namespace ZombieHouse.Level
         public static Material SightDot => GetEmissive("sightdot", new Color(0.35f, 0.85f, 0.45f),
                                                        new Color(0.6f, 2.1f, 0.9f), 0.5f);
         // Walker palette: ashen grey-green skin, filthy desaturated clothing, dried blood.
-        public static Material Skin => Get("skin", new Color(0.55f, 0.56f, 0.48f), 0.10f);
-        public static Material Shirt => Get("shirt", new Color(0.21f, 0.20f, 0.18f), 0.04f);
-        public static Material Trousers => Get("trousers", new Color(0.17f, 0.18f, 0.21f), 0.04f);
-        public static Material Gore => Get("gore", new Color(0.26f, 0.03f, 0.03f), 0.30f);
-        public static Material Hair => Get("hair", new Color(0.11f, 0.09f, 0.08f), 0.06f);
+        //
+        // These five wear the generated surfaces, and between them they cover every
+        // walker, sailor, kid, mascot and boss in all eight levels — which is why this
+        // was the first thing to texture rather than the geometry. The colours are the
+        // ones they always had; GetTextured corrects them for the encoding rather than
+        // asking the palette to be re-tuned.
+        //
+        // The tiling numbers are in tiles per limb, and a limb is roughly half a metre
+        // around. Flesh at 2 puts its 48-cell pore lattice at about 4 mm, cloth at 3 puts
+        // its 40 threads at about 4 mm, and hair stays at 1.5 because a strand stretched
+        // over the whole scalp is what makes it read as hair rather than as fur.
+        public static Material Skin =>
+            GetTextured("skin", new Color(0.55f, 0.56f, 0.48f), SurfaceKind.Flesh, 2f, 0.10f);
+        public static Material Shirt =>
+            GetTextured("shirt", new Color(0.21f, 0.20f, 0.18f), SurfaceKind.Cloth, 3f, 0.04f);
+        public static Material Trousers =>
+            GetTextured("trousers", new Color(0.17f, 0.18f, 0.21f), SurfaceKind.Cloth, 3f, 0.04f);
+        public static Material Gore =>
+            GetTextured("gore", new Color(0.26f, 0.03f, 0.03f), SurfaceKind.Flesh, 1.5f, 0.30f);
+        public static Material Hair =>
+            GetTextured("hair", new Color(0.11f, 0.09f, 0.08f), SurfaceKind.Hair, 1.5f, 0.06f);
         public static Material Blade => Get("blade", new Color(0.62f, 0.64f, 0.68f), 0.75f, 0.9f);
 
         /// The power cell: a scuffed industrial case with a warning stripe.

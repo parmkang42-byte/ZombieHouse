@@ -190,7 +190,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
@@ -323,6 +323,29 @@ jaguars and monkeys all shipped pink this way, and so did both of the Cormorant'
 prefab under `Assets/Prefabs` must have a material. Run it after adding any creature. It looks
 at the saved asset, not the object in memory, because the creature is *correct* in memory at
 the moment it is built; that is the whole trap.
+
+**The same rule applies one level down, to textures.** The five body materials (`skin`,
+`shirt`, `trousers`, `gore`, `hair`) wear generated maps from `Fx/ProtoSkin`, written as
+`.png` assets under `Assets/Resources/ProtoTextures`. An in-memory `Texture2D` does not
+survive being saved into a prefab any more than an in-memory material does, so the maps are
+real assets and the normal maps go through the importer — `TextureImporterType.NormalMap`
+knows the per-platform encoding, and hand-packing it works right up until someone builds for
+a platform where it does not.
+
+**The generated albedo is a multiplier, not a colour, and the correction is applied exactly
+once.** It averages white and is divided down by its own peak to fit in bytes;
+`ApplySurface` multiplies the material colour back up by that peak, so a textured material
+lands on precisely the tone it had when it was flat. That round trip is why texturing every
+body in the game needed no palette re-tuning. Apply it twice and everything renders ~28% too
+bright; skip it and cloth renders at 62% — both uniform, both with nothing to point at.
+`CreateTexturedMaterial` guards on a bound albedo for exactly this reason, and `Test Skin`
+measures the decoded mean rather than trusting the arithmetic.
+
+**Keep every noise octave inside the sampling rate.** `ProtoSkin`'s finest octave must stay
+at two or more pixels per lattice cell (at 256 px, a base period of 32 over three octaves).
+Hair originally used 64, which put its third octave at one cell per pixel — white noise, and
+white noise on an enemy seen across a room is shimmer. It also masked its own tiling seam
+from `Test Skin`, so the aliasing was hiding the check that would have found it.
 
 Quadrupeds reuse the humanoid bone names on purpose (front legs are "arms") so `ZombieRagdoll`
 and `ZombieDismemberment` work unchanged. Even the snake gets four vestigial leg stubs buried
