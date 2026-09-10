@@ -79,7 +79,19 @@ namespace ZombieHouse.Level
             if (material == null) return;
 
             material.EnableKeyword("_EMISSION");
-            if (material.HasProperty("_EmissionColor")) material.SetColor("_EmissionColor", emission);
+
+            // Through the same re-encoding as ambient and fog, and for the same reason one
+            // step further along. An emission colour is authored as sRGB and linearised
+            // before use, so under linear colour space the authored 2.1 is delivered as
+            // 2.1^2.4 - about 5.4, two and a half times hotter than intended. Every glowing
+            // thing in the game bloomed accordingly the moment the switch was thrown, which
+            // is exactly what it did and exactly what got reported.
+            //
+            // These values sit between 1.5 and 2.8 because that range clears every level's
+            // bloom threshold with room to spare. That was tuned by eye in gamma, and this
+            // is what keeps it meaning the same thing now.
+            if (material.HasProperty("_EmissionColor"))
+                material.SetColor("_EmissionColor", LevelLighting.AsAuthored(emission));
             if (material.HasProperty("_EmissionMap")) material.SetFloat("_EmissiveExposureWeight", 0f);
             material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
         }

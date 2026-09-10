@@ -448,16 +448,21 @@ namespace ZombieHouse.Level
             hub.transform.SetParent(_container, false);
             hub.transform.position = transform.position + at + new Vector3(0f, 15f, 0f);
 
-            // One revolution every four seconds, about X — the wheel stands upright and
-            // rolls about its hub. That is roughly fifteen times a real fairground wheel and
-            // it is the right call here: a wheel turning at a believable rate reads as
-            // stationary at a glance, and the whole job of this thing is to be the one
-            // moving object visible from anywhere in the park.
+            // One revolution every fifteen seconds, about X — the wheel stands upright and
+            // rolls about its hub.
+            //
+            // This was four seconds, and the argument for it was that a wheel turning at a
+            // believable rate reads as stationary at a glance, so it should be sped up to
+            // stay legible as the one moving object visible from anywhere in the park. In
+            // play that turned out to be wrong: at four seconds it is not a fairground ride
+            // being driven too fast, it is a prop spinning, and a prop spinning reads as a
+            // game object rather than as a place. Fifteen is still about four times a real
+            // wheel and legible from across the park, without announcing itself.
             //
             // No wander either, unlike the carousel. The carousel drifts because something
             // has gone wrong with it; the wheel is turning steadily, which raises the much
             // worse question of what is turning it.
-            hub.AddComponent<CarouselSpin>().ConfigureTurn(4f, Vector3.right, 0f);
+            hub.AddComponent<CarouselSpin>().ConfigureTurn(15f, Vector3.right, 0f);
 
             const int spokes = 16;
             for (int i = 0; i < spokes; i++)

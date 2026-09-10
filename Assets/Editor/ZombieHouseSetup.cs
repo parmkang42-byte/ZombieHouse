@@ -4991,10 +4991,61 @@ namespace ZombieHouse.EditorTools
             problems += CheckMascotArchetypes();
             problems += CheckMascotHeadsAreOversized();
             problems += CheckPrincessIsTheCaller();
+            problems += CheckFerrisWheelRate();
 
             Debug.Log(problems == 0
-                ? "[Merryland] PASS — the suits shrug off rifle rounds and the heads are far too big."
+                ? "[Merryland] PASS — the suits shrug off rifle rounds, the heads are far too big, " +
+                  "and the wheel turns at the rate it is supposed to."
                 : $"[Merryland] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The wheel turns once every fifteen seconds.
+        ///
+        /// Worth asserting rather than eyeballing, because the rate is the whole character
+        /// of the thing and it is a single float buried in a build method. It was four
+        /// seconds, which read as a prop spinning rather than as a fairground ride; there
+        /// is nothing in a screenshot, a log line or a NavMesh count that would ever catch
+        /// it drifting back.
+        ///
+        /// CarouselSpin has carried a SecondsPerRevolution property marked "for the test"
+        /// since it was written, and until now no test read it.
+        /// </summary>
+        private static int CheckFerrisWheelRate()
+        {
+            const float Wanted = 15f;
+
+            ILevelSource source = OpenLevel(MerrylandScenePath, "Merryland");
+            if (source == null) return 1;
+
+            ZombieHouse.Level.CarouselSpin wheel = null;
+            foreach (ZombieHouse.Level.CarouselSpin spin in
+                     Object.FindObjectsByType<ZombieHouse.Level.CarouselSpin>(
+                         FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (spin.name != "FerrisSpin") continue;
+                wheel = spin;
+                break;
+            }
+
+            if (wheel == null)
+            {
+                Debug.LogError("[Merryland] No FerrisSpin in the park — the wheel does not turn.");
+                return 1;
+            }
+
+            float actual = wheel.SecondsPerRevolution;
+            Debug.Log($"[Merryland] Ferris wheel: one revolution per {actual:0.0} s.");
+
+            if (Mathf.Abs(actual - Wanted) > 0.1f)
+            {
+                Debug.LogError($"[Merryland] The wheel turns once per {actual:0.0} s, not " +
+                               $"{Wanted:0} s. Too fast and it stops being a ride and becomes a " +
+                               "prop spinning, which reads as a game object rather than a place.");
+                return 1;
+            }
+
+            return 0;
         }
 
         /// <summary>The five Merryland archetypes exist and say what they should.</summary>
@@ -9782,11 +9833,53 @@ namespace ZombieHouse.EditorTools
                 }
             }
 
+            // --- and what every glowing thing will receive -----------------------
+            // The same failure one step along, and the one that actually shipped: an
+            // emission colour is authored as sRGB and linearised before use, so an
+            // authored 2.1 was being delivered as 2.1^2.4, about 5.4. Everything that
+            // glows bloomed two and a half times too hard the moment linear was switched
+            // on, which is exactly what came back from playing it.
+            var probe = new Material(ProtoMaterials.LitShader);
+            try
+            {
+                var authored = new Color(2.1f, 1.5f, 0.15f);
+                ProtoMaterials.MakeEmissive(probe, authored);
+
+                Color stored = probe.GetColor("_EmissionColor");
+                Color delivered = QualitySettings.activeColorSpace == ColorSpace.Linear
+                    ? new Color(Mathf.GammaToLinearSpace(stored.r),
+                                Mathf.GammaToLinearSpace(stored.g),
+                                Mathf.GammaToLinearSpace(stored.b))
+                    : stored;
+
+                Debug.Log($"[Colour] emission authored {authored.r:0.00} -> stored " +
+                          $"{stored.r:0.00} -> delivered {delivered.r:0.00}");
+
+                if (Mathf.Abs(delivered.r - authored.r) > 0.05f)
+                {
+                    Debug.LogError($"[Colour] an authored emission of {authored.r:0.00} reaches the " +
+                                   $"renderer as {delivered.r:0.00}. The 1.5-2.8 range every " +
+                                   "emissive uses was tuned by eye against the bloom threshold, " +
+                                   "and it only means anything if this round trips.");
+                    problems++;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(probe);
+            }
+
             // --- what each level will actually receive --------------------------
             // The band the eight levels were authored inside, measured in the light they
             // contribute rather than in the numbers they are stored as.
-            const float Darkest = 0.02f;
-            const float Brightest = 0.40f;
+            //
+            // Scaled by the same trim the levels are, so turning the game's brightness up
+            // or down does not require re-tuning this check and does not loosen it. What
+            // it is really watching for is a ratio error - twelve times too dark from a
+            // missed re-encode, or twice-encoded and far too bright - and a ratio error
+            // stays visible however the trim is set.
+            float darkest = 0.02f * LevelLighting.AmbientTrim;
+            float brightest = 0.40f * LevelLighting.AmbientTrim;
 
             foreach (var level in Levels)
             {
@@ -9804,17 +9897,17 @@ namespace ZombieHouse.EditorTools
                 Debug.Log($"[Colour] {level.Tag,-10} ambient stored {stored.r:0.000} " +
                           $"-> contributes {luma:0.0000}");
 
-                if (luma < Darkest)
+                if (luma < darkest)
                 {
                     Debug.LogError($"[Colour] {level.Tag} ambient contributes {luma:0.0000}, under " +
-                                   $"{Darkest:0.00}. This is the un-re-encoded failure: the level " +
+                                   $"{darkest:0.00}. This is the un-re-encoded failure: the level " +
                                    "is about twelve times darker than it was authored to be.");
                     problems++;
                 }
-                else if (luma > Brightest)
+                else if (luma > brightest)
                 {
                     Debug.LogError($"[Colour] {level.Tag} ambient contributes {luma:0.0000}, over " +
-                                   $"{Brightest:0.00}. Something has been re-encoded twice.");
+                                   $"{brightest:0.00}. Something has been re-encoded twice.");
                     problems++;
                 }
             }

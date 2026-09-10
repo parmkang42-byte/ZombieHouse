@@ -86,9 +86,32 @@ namespace ZombieHouse.Level
                 authored.a);
         }
 
+        /// <summary>
+        /// One knob for how dark the game is.
+        ///
+        /// Every level is authored with its own ambient, and those eight numbers carry the
+        /// difference in mood between a moonlit forest and a sealed hull. This scales all
+        /// of them together, so the relationship between them survives and there is exactly
+        /// one number to turn when the answer is "a bit too dark" rather than "the pyramid
+        /// specifically is too dark".
+        ///
+        /// It multiplies rather than adds on purpose. Adding a constant lifts the darkest
+        /// levels proportionally hardest, which would flatten the six-to-one spread between
+        /// the pyramid and the house into something much closer to uniform - and that
+        /// spread is the authored intent, not an accident.
+        ///
+        /// Raised from 1 to 1.6 after the switch to linear colour space, which is when the
+        /// levels were first reported as too dark. Turn this, not the eight call sites.
+        /// </summary>
+        public const float AmbientTrim = 1.6f;
+
         /// <summary>The scene's ambient and fog, authored in the units they always were.</summary>
         public static void SetAmbient(Color ambient) =>
-            RenderSettings.ambientLight = AsAuthored(ambient);
+            RenderSettings.ambientLight = AsAuthored(
+                new Color(ambient.r * AmbientTrim,
+                          ambient.g * AmbientTrim,
+                          ambient.b * AmbientTrim,
+                          ambient.a));
 
         public static void SetFogColor(Color fog) =>
             RenderSettings.fogColor = AsAuthored(fog);
