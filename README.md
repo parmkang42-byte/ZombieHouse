@@ -1,6 +1,7 @@
 # Zombie House
 
-First-person zombie shooter. Unity 6.5 (6000.5.8f1), Built-in Render Pipeline, C#.
+First-person zombie shooter. Unity 6.5 (6000.5.8f1), Built-in Render Pipeline, linear
+colour space, C#. Eight levels, no imported art or audio.
 
 **Project lives at `C:\Users\<user>\Dev\ZombieHouse` — deliberately not in OneDrive.**
 Unity rewrites `Library/` constantly; OneDrive sync locks those files mid-import and corrupts
@@ -9,7 +10,7 @@ only — everything else regenerates.
 
 ---
 
-## The six levels
+## The eight levels
 
 | | Menu item | Verify |
 |---|---|---|
@@ -19,8 +20,10 @@ only — everything else regenerates.
 | **Level 4 — the school** | Zombie House → Build Level 4 School | Verify School |
 | **Level 5 — the pyramid** | Zombie House → Build Level 5 Pyramid | Verify Pyramid |
 | **Level 6 — the jungle** | Zombie House → Build Level 6 Jungle | Verify Jungle |
+| **Level 7 — Merryland** | Zombie House → Build Level 7 Merryland | Verify Merryland |
+| **Level 8 — The Cormorant** | Zombie House → Build Level 8 Cormorant | Verify Cormorant |
 
-All six are built by the same machinery. `ILevelSource` is the seam: a level answers where the
+All eight are built by the same machinery. `ILevelSource` is the seam: a level answers where the
 player starts, where the exit is, where pickups go and where zombies can lurk. `LevelDirector`,
 `ZombieSpawner` and the NavMesh baker work on either without knowing which they are in.
 
@@ -1034,6 +1037,95 @@ green. Die and you restart.
 
 ---
 
+## How it looks
+
+There is still no imported art. Everything below is generated in code, and the constraint is
+load-bearing rather than a limitation to apologise for — a texture that is a function has a
+seed, and a seed can be tested.
+
+### The surface
+
+`Fx/ProtoSkin` generates three surfaces — decayed flesh, worn cloth, matted hair — each as an
+albedo **and a normal map built from the same height field**. That last part is the whole
+trick: a crease has to be dark *and* indented. Two maps made from different noise look worse
+than no maps at all, because the shading contradicts the pigment and the eye notices without
+being able to say why.
+
+Flesh is lividity pooling at room scale, capillary marbling at conversational distance, and
+pore grain that exists only for a torch held a metre away. Cloth is a woven grid with the
+threads nudged off true, ground-in dirt and thin places where the dye has gone. Hair is
+stretched about ten to one, because direction is the only thing separating hair from noise.
+
+The albedo is a **multiplier that averages white**, not a colour. It is divided down by its own
+peak to fit in bytes and the material colour is multiplied back up by the same number, so a
+textured material lands on exactly the tone the flat one had. That is why five materials could
+be given surface detail — covering every walker, sailor, kid, mascot and boss in the game —
+without one entry of the palette being re-tuned.
+
+### The silhouette
+
+A capsule is the same width all the way down; a thigh is not. `Enemies/BodyMesh` generates
+tapered limbs (25–39 %, with the muscle belly where the muscle is) and a skull with a brow
+ridge, scooped temples, an occipital bulge and a jaw that narrows.
+
+Each of these replaces what a part **draws** and never what it **collides** with. The head is
+still the sphere carrying the 2.5× critical multiplier and every limb is still its capsule, so
+no shot that used to land stops landing. Nothing exceeds the radius of the primitive it
+replaces either — geometry outside the collider is something you can see and cannot hit, which
+is why the skull is carved out of a 0.90 ball rather than added to a full-sized one.
+
+They are also cheaper than what they replace: 336 triangles against a Unity capsule's ~500.
+
+### The light
+
+Every light in the game used to be created with `LightShadows.None`. That had two consequences,
+and the second is the worse one: nothing was grounded — a body under a lamp with no shadow
+floats in front of a room rather than standing in it — and **light passed through walls**,
+because an unshadowed point light ignores geometry entirely. The house's forty 16 m lamps were
+lighting each other's rooms through solid plaster.
+
+`Level/LevelLighting` is the one place that decides. Level lights cast; anything attached to a
+creature, a pickup or an NPC does not, and that is load-bearing: a point-light shadow is a
+cubemap, six faces, so a bear's two eye-glows made casting would cost twelve renders per bear
+and scale with the horde.
+
+The budget is the renderer's own number. `pixelLightCount` is 4; past the fourth Unity demotes
+a light to vertex and a demoted light casts nothing, so a fifth overlapping caster is work
+done and thrown away. `Test Shadows` holds every level to it.
+
+### The feet
+
+The walk cycle is two sine waves and it assumes the world is flat. Everywhere this game is not
+flat — the house stairs, the pyramid ramps, the ship's ladders — that put a foot through the
+tread. `ZombieVisuals` now raycasts for the ground under each foot, sinks the hips by however
+much the lower foot is short, and *then* solves each leg; doing it the other way round moves
+both feet again and undoes the solve.
+
+The solve is two-dimensional on purpose. The rig only rotates hips and knees about X, so the
+leg lives in one plane and the general 3D solve — pole vector, knee-direction ambiguity — does
+not arise. Astride a 12 cm step it went from 12.7 cm through the floor to 0.0.
+
+### Colour space
+
+The project is in **linear**. In gamma, Unity does its lighting arithmetic on sRGB-encoded
+values, which is not what those values mean, and dark scenes lit by point lights suffer worst —
+which is every level here.
+
+The catch is that ambient, fog and emission are authored as sRGB and linearised before use,
+where in gamma the number in the source *was* the contribution. Flipping the switch silently
+reinterprets all of them: an ambient of 0.055 stops contributing 0.055 and starts contributing
+0.0045. `LevelLighting.AsAuthored` re-encodes so the authored number keeps meaning what it
+says, and is a no-op under gamma. `Test Colour Space` caught this on 7 of 8 levels, and caught
+the same thing again in emission — an authored 2.1 arriving as 5.12, which is why everything
+that glowed bloomed two and a half times too hard.
+
+**Nothing headless can tell you how this looks.** Two batch-mode renders of the same scene came
+back three times apart, so the exposure probe written to measure it was deleted rather than
+left to mislead. `LevelLighting.AmbientTrim` is the single knob for overall brightness; it
+scales all eight levels together so their relative moods survive.
+
+---
+
 ## How the level is built
 
 The house is **not** hand-placed geometry. It is generated from an ASCII floor plan on the
@@ -1109,22 +1201,30 @@ package and why there is no bake button to forget after you edit the floor plan.
 ```
 Assets/Scripts/
   Core/       IDamageable, DamageInfo, GameManager (run state, win/lose), Noise (AI hearing)
-  Player/     InputReader (works on either input backend), PlayerController, MouseLook, PlayerHealth
+  Player/     InputReader (works on either input backend), PadInput (wireless controller),
+              PlayerController, MouseLook, PlayerHealth, Flashlight
   Combat/     Weapon (hitscan, spread, recoil, ammo), MeleeWeapon (the machete arc),
               Hitbox (headshot multipliers), WeaponViewModel (sway/bob/recoil/reload),
               WeaponFx (muzzle, casings), Shell, ImpactFx
   Enemies/    ZombieAI (state machine), ZombieHealth, ZombieSpawner (waves), ZombieFactory,
-              ZombieRig (bone references), ZombieVisuals (procedural animation),
-              ZombieAppearance (per-walker variation), ZombieRagdoll (death physics), ZombieAudio
+              ZombieRig (bone references), ZombieVisuals (procedural animation + foot IK),
+              ZombieAppearance (per-walker variation), ZombieRagdoll (death physics), ZombieAudio,
+              ZombieArchetype (per-kind stats + the level roster), ZombieDismemberment,
+              BodyMesh (tapered limbs, the skull), FangMesh, GullFlight, GullFactory,
+              ZombieBearFactory, ZombieHorseFactory, ScarabFactory, JungleFactory
   Audio/      ProceduralAudio (the synth), SoundBank (the recipes), GameAudio (pool + playback),
               PlayerAudio, WeaponAudio, StingerAudio
-  Fx/         ProtoTextures (generated sprites), ParticleFactory, ImpactSystem, DecalPool
-  Level/      HouseGenerator, LevelDirector (wires markers to gameplay), RuntimeNavMeshBaker,
-              ExitZone, ProtoMaterials
+  Fx/         ProtoTextures (generated sprites), ProtoSkin (skin/cloth/hair + normal maps),
+              ParticleFactory, ImpactSystem, DecalPool, PostProcessStack, DreadDirector
+  Level/      HouseGenerator, ForestGenerator, TownGenerator, SchoolGenerator,
+              PyramidGenerator, JungleGenerator, MerrylandGenerator, ShipGenerator,
+              LevelDirector (wires markers to gameplay), RuntimeNavMeshBaker, ExitZone,
+              ProtoMaterials, LevelLighting (shadows + colour space), CarouselSpin,
+              SurvivorFactory, PropLibrary
   Items/      Pickup (ammo / health)
   UI/         HudController (uGUI canvas, built in code)
 Assets/Editor/
-  ZombieHouseSetup.cs   the "Build Level 1 Scene" and "Verify Level" menus
+  ZombieHouseSetup.cs   every Build Level N menu, 8 level verifies, 33 headless tests
 ```
 
 ### Things worth knowing
@@ -1138,8 +1238,13 @@ Assets/Editor/
   position for 7 seconds after losing you.
 - **Input works on both backends.** `InputReader` compiles against the new Input System or the
   legacy Input Manager, so switching Active Input Handling will not break the build.
-- **No art dependencies.** Everything is primitives and code-generated materials living in
-  `Assets/Resources/ProtoMaterials`. Edit those `.mat` files to restyle the whole house at once.
+- **No art dependencies.** Everything is generated: materials in `Resources/ProtoMaterials`,
+  the skin/cloth/hair textures and their normal maps in `Resources/ProtoTextures`, the tapered
+  limb and skull meshes in `Resources/ProtoMeshes`, every sound in `SoundBank`. All three asset
+  folders are written by the level build and committed, because **an in-memory material,
+  texture or mesh does not survive being saved into a prefab** — the prefab ships with a
+  dangling reference and renders magenta, or in the mesh case as a hole. That has bitten this
+  project three times; `Test Prefab Materials` and `Test Body Meshes` now check the symptom.
 
 ---
 
@@ -1529,6 +1634,39 @@ plan stage rather than after a two-minute bake.
   `blender --background --python` runs them, they export unit-sized OBJ into
   `Resources/Props`. Boulder, ruined column, gate post so far.
 
+### Stage 12 — Merryland and The Cormorant ✅
+- **Level 7, an abandoned theme park.** Carousel, big top, hedge maze, castle, and a ferris
+  wheel turning once per fifteen seconds — the one moving object visible from anywhere.
+- **Level 8, a container ship.** Four decks, ladders between them, a crew of deckhands and
+  officers, herring gulls that dive at you and the Bosun at the end.
+- **A level's population now comes from its roster, not from `Weight`.** The old convention was
+  that level-specific kinds carried `Weight = 0`; Merryland's mascots were given real weights
+  and, because the draw ran over the whole catalogue, **50.3 % of every walker in all seven
+  levels** rolled a mascot's stats while wearing that level's clothes. It shipped that way for a
+  week and no test looked. `Test Zombie Roster` looks now.
+- **Population is headcount against floor area.** `Test Crowding` bakes each level and divides
+  walkable NavMesh area by everything that will come at you. The Cormorant shipped at 39.9 m²
+  per enemy — a full mansion's population in a hull a quarter its size — against the school's
+  88.5, the tightest level here that plays. Now 93.
+
+### Stage 13 — a wireless controller ✅
+- Full pad support on both input backends. LT aims and RT fires, and nothing else does; the
+  Uzi is on the back paddles because it is the one weapon you pick up mid-fight and lose when
+  it runs dry, so cycling to it means cycling towards a slot that may not be there.
+- **The two triggers get an axis each, never the shared 3rd axis.** That axis carries both with
+  a sign convention that depends on the driver — it shipped backwards on a real pad, so aiming
+  fired and firing aimed — and one axis cannot carry both at once, which breaks aiming down
+  the sights and shooting.
+
+### Stage 14 — the look pass ✅
+Generated skin, cloth and hair with matching normal maps; shadows on every level light and
+light that stops passing through walls; foot placement on real ground; tapered limbs and a
+skull; linear colour space. See [How it looks](#how-it-looks). Five headless tests came out of
+it — `Test Skin`, `Test Shadows`, `Test Foot Placement`, `Test Body Meshes`, `Test Colour
+Space` — and between them they caught four bugs that were invisible by reading: hair aliasing
+into white noise, a foot that tilted with the shin, a sole measured from bounds that grow when
+it tilts, and 7 of 8 levels sitting twelve times too dark after the colour space flip.
+
 ### Stage 3 — systems depth
 - Multiple weapons + switching (shotgun for corridors, rifle for the long spine).
 - Zombies that notice the beam — the torch is currently free to leave on.
@@ -1558,9 +1696,16 @@ Almost everything is a serialized field, so you can tune in Play mode:
 | Aim too loose | `Weapon` → baseSpread, movingSpreadBonus |
 | Zombies too easy | `ZombieHealth` → maxHealth; `ZombieAI` → chaseSpeed, attackDamage |
 | Too many / too few | `ZombieSpawner` → totalZombies, maxAliveAtOnce, spawnInterval |
-| Too dark / bright | `HouseGenerator` → interiorLightIntensity; scene `Moonlight` intensity |
+| **Whole game too dark / bright** | `LevelLighting` → **AmbientTrim** (1.6) — scales all eight levels at once, then rebuild them |
 | Too flat / washed out | `PostProcessStack` → bloomIntensity, threshold, contrast, vignetteIntensity |
 | One thing glares | that material's emission in `CreatePlaceholderMaterials`, not the bloom — turning the stack down dims every level |
+| Everything glares | emission is re-encoded for linear in `MakeEmissive`; if that were skipped an authored 2.1 arrives as 5.1 |
+| Shadows too costly | `LevelLighting.MakeRoomLight`; budget is `pixelLightCount` (4), checked by **Test Shadows** |
+| Shadow detached from the feet | `LevelLighting` → shadowBias, shadowNormalBias — Unity's defaults assume rooms far bigger than a 2 m cell |
+| Feet through stairs / floating | `ZombieVisuals` → footPlacement, footFollowSpeed, maxHipDrop; re-run **Test Foot Placement** |
+| Walkers too smooth / plastic | `ProtoSkin` seeds in `ProtoMaterials.Seeds`, then delete `Resources/ProtoTextures` and rebuild |
+| Limbs the wrong shape | `BodyMesh.Build` → the taper, bulge and bulgeAt per part; re-run **Test Body Meshes** |
+| Ferris wheel speed | `MerrylandGenerator.BuildFerrisWheel` → `ConfigureTurn` seconds (15); checked by **Test Merryland** |
 | Audio too loud / quiet | `GameAudio` → masterVolume, ambienceVolume |
 | A sound is wrong | `SoundBank` — every number in a recipe is audible; change and press Play |
 | Zombies move oddly | `ZombieVisuals` → strideCyclesPerMetre, legSwingDegrees, lurchRollDegrees |
@@ -1568,14 +1713,12 @@ Almost everything is a serialized field, so you can tune in Play mode:
 | Too much blood | `ImpactSystem` → bloodMistCount, bloodPoolSize; `DecalPool` → capacity, lifetime |
 | Katana too strong / weak | `MeleeWeapon` → damage, cooldown, range, arcHalfAngle |
 | No dismemberment wanted | `MeleeWeapon` → seversLimbs off; `ZombieDismemberment` → legLossIsFatal |
-| Not enough blood | `ImpactSystem` → bloodMistCount, spatterPerHit, bloodPoolSize |
 | Corpses pile up | `ZombieHealth` → removeCorpseAfterSeconds (0 = permanent) |
 | Ragdolls look wrong | `ZombieRagdoll` → joint limits, masses, impulseScale; re-run **Test Ragdoll** |
 | Walkers too samey | `ZombieAppearance` → heightScale, widthScale, colour spreads, limpSeverity |
 | Zombie mix wrong | `ZombieArchetype.Catalogue` → Weight per kind, or any of its stats |
 | Horde too coordinated | `ZombieAI` → hordeCallRadius, flankDistance, leadTime, searchPoints |
-| Too many / too few | `ZombieSpawner` → totalZombies (30), maxAliveAtOnce (12) |
-| Interior too dark / bright | `HouseGenerator` → interiorLightIntensity, lightSpacingCells; scene ambient |
+| The house specifically | `HouseGenerator` → interiorLightIntensity (3.4), interiorLightRange (10), lightSpacingCells |
 | Zombies too quiet / loud | `ZombieAudio` → voiceVolume; `SoundBank.ZombieGrumble` → fundamental, Normalize peak |
 | Footsteps wrong surface | `SoundBank.FootstepSand` (player) and `Footstep` (zombies) are separate |
 | Railing in the way | `HouseGenerator` → buildStairRailings, railingHeight |
