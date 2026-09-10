@@ -32,6 +32,30 @@ namespace ZombieHouse.Enemies
         [SerializeField] private float lurchRollDegrees = 5f;
         [SerializeField] private float idleSwayDegrees = 2f;
 
+        [Header("Carriage")]
+        [Tooltip("How far the hips rotate about the spine as each leg swings through. " +
+                 "The single biggest difference between a walking body and a puppet.")]
+        [SerializeField] private float pelvisTwistDegrees = 7f;
+
+        [Tooltip("How much of that the shoulders give back the other way. 1 would be a " +
+                 "perfectly counter-rotating athlete; a walker is stiffer than that.")]
+        [SerializeField] private float shoulderCounterRotation = 0.75f;
+
+        [Tooltip("How far the body shifts sideways over the leg carrying it, in metres.")]
+        [SerializeField] private float weightShift = 0.035f;
+
+        [Tooltip("How uneven the step is. 0 is a metronome; higher spends less time on " +
+                 "the collapse and more on the drag.")]
+        [Range(0f, 0.8f)]
+        [SerializeField] private float strideAsymmetry = 0.38f;
+
+        [Tooltip("How fast the head catches up with the body under it.")]
+        [SerializeField] private float headFollowSpeed = 8f;
+
+        [Tooltip("How much of the lag actually shows. 0 bolts the head to the spine.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float headLagStrength = 0.8f;
+
         [Header("Posture")]
         [SerializeField] private float hunchDegrees = 17f;
         [SerializeField] private float hunchWhenHunting = 26f;
@@ -122,6 +146,7 @@ namespace ZombieHouse.Enemies
 
         private float _limpSeverity;
         private int _limpSide = 1;
+        private float _headTrail;
         private float _headTilt;
         private float _headTurn;
         private float _shoulderDroop;
@@ -230,9 +255,22 @@ namespace ZombieHouse.Enemies
         /// </summary>
         public void Tick(float dt)
         {
+            Tick(dt, _ai != null ? _ai.PlanarSpeed : 0f);
+        }
+
+        /// <summary>
+        /// One frame of pose at a stated speed.
+        ///
+        /// The speed normally comes from the NavMeshAgent, and an agent cannot move in
+        /// edit mode — there is no NavMesh under it and nothing steps the simulation — so
+        /// a test of the walk cycle would otherwise only ever see a walker standing
+        /// perfectly still. This is the seam that lets one watch the thing actually walk.
+        /// </summary>
+        public void Tick(float dt, float planarSpeed)
+        {
             if (_dead || _bones == null || !_bones.IsComplete) return;
 
-            float speed = _ai != null ? _ai.PlanarSpeed : 0f;
+            float speed = planarSpeed;
             bool hunting = _ai != null && (_ai.State == ZombieState.Chase || _ai.State == ZombieState.Attack);
 
             AdvanceStride(speed, dt);
@@ -277,7 +315,19 @@ namespace ZombieHouse.Enemies
                 return;
             }
 
-            float swing = Mathf.Sin(_stridePhase);
+            // The step is not a metronome, and a dead one least of all. Warping the phase
+            // before it is read spends less time on the collapse and more on the drag that
+            // follows it, so the two halves of a stride take visibly different lengths of
+            // time. A pure sine gives a leg that sweeps like a pendulum, which is exactly
+            // what a mechanism does and exactly what a body does not.
+            //
+            // The warp is monotonic and fixes both ends, so sin(warped) crosses zero at
+            // the same instants sin(phase) does. That matters: footsteps are dispatched
+            // off the sign of the unwarped phase in AdvanceStride, and the feet would
+            // otherwise land audibly before or after they land visibly.
+            float warped = _stridePhase + Mathf.Sin(_stridePhase) * strideAsymmetry;
+
+            float swing = Mathf.Sin(warped);
             float moving = Mathf.Clamp01(speed / 2.2f);
 
             ResolveAttack(out float attackBlend, out float armStrike, out float lunge);
@@ -293,27 +343,66 @@ namespace ZombieHouse.Enemies
 
             // --- body --------------------------------------------------------
             // Dip on each footfall, plus an extra lurch when the bad leg takes weight.
-            float bob = -Mathf.Abs(Mathf.Cos(_stridePhase)) * bobHeight * moving;
+            float bob = -Mathf.Abs(Mathf.Cos(warped)) * bobHeight * moving;
             float limpDip = _limpSeverity * limpDrop * Mathf.Clamp01(swing * _limpSide) * moving;
 
             float roll = swing * lurchRollDegrees * moving
                          + Mathf.Sin(_stridePhase * 0.5f) * idleSwayDegrees * (1f - moving)
                          + _limpSeverity * 3.5f * _limpSide * moving;
 
-            _bones.Rig.localPosition = new Vector3(0f, bob - limpDip, lunge);
-            _bones.Rig.localRotation = Quaternion.Euler(jolt, 0f, roll);
+            // Counter-rotation, and this is the one that matters most.
+            //
+            // A leg cannot swing forward without the hip on that side coming with it, and
+            // the shoulders answer by turning the other way so the body does not corkscrew
+            // off its heading. Without it a walker is a set of limbs hinged to a post that
+            // never turns, which is what this rig was: every rotation in it was pitch or
+            // roll, and Y was zero from the pelvis to the skull.
+            //
+            // The walker gives back less than a person does — 0.75 rather than 1 — because
+            // the counter-turn is what a live spine does to stay economical, and economy is
+            // the first thing to go.
+            float pelvisYaw = swing * pelvisTwistDegrees * moving;
+            float shoulderYaw = -pelvisYaw * shoulderCounterRotation;
+
+            // Weight over the leg carrying it. Small — three centimetres — because it is
+            // read as a shift of mass rather than seen as a sidestep, and past about five
+            // it stops looking like walking and starts looking like staggering.
+            float lateral = -swing * weightShift * moving;
+
+            _bones.Rig.localPosition = new Vector3(lateral, bob - limpDip, lunge);
+            _bones.Rig.localRotation = Quaternion.Euler(jolt, pelvisYaw, roll);
 
             // --- spine -------------------------------------------------------
+            // The spine hangs off the rig, so its local yaw has to carry the whole
+            // difference between where the hips are pointing and where the shoulders
+            // should be. Writing shoulderYaw straight in here would only reduce the
+            // pelvis's turn, never reverse it.
             if (_bones.Spine != null)
-                _bones.Spine.localRotation = Quaternion.Euler(_hunch + attackBlend * 10f, 0f, -roll * 0.3f);
+                _bones.Spine.localRotation = Quaternion.Euler(
+                    _hunch + attackBlend * 10f,
+                    shoulderYaw - pelvisYaw,
+                    -roll * 0.3f);
 
             // --- head --------------------------------------------------------
+            // The head trails what is underneath it. A skull rigidly bolted to a turning
+            // spine moves in perfect lockstep with it, and perfect lockstep is the single
+            // clearest signal that a thing has no mass: everything arrives at once.
+            //
+            // So a damped follower chases the yaw the neck inherits, and whatever it has
+            // not caught up on yet is written back as counter-rotation. The head ends up
+            // where the body was a moment ago, which is where a head actually is.
             if (_bones.Neck != null)
             {
+                float carried = shoulderYaw;
+                _headTrail = Mathf.Lerp(_headTrail, carried,
+                                        1f - Mathf.Exp(-headFollowSpeed * dt));
+
+                float lag = (_headTrail - carried) * headLagStrength;
                 float loll = -swing * headLollDegrees * moving;
+
                 _bones.Neck.localRotation = Quaternion.Euler(
                     -_hunch * 0.55f,
-                    _headTurn,
+                    _headTurn + lag,
                     _headTilt + loll);
             }
 

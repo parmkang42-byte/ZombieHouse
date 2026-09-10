@@ -41,6 +41,22 @@ Bodies come from the prefabs at runtime, so a change to `ZombieFactory` or `Body
 `Assets/Prefabs/` and `Assets/Resources/ProtoMeshes/`. That avoids rewriting eight scenes'
 worth of YAML for a change that does not touch them.
 
+**A plain sine's peak-to-mean angular speed is exactly pi/2 (1.571)**, whatever its
+amplitude — it is a property of the shape. `Test Gait` uses that as the reference for "the leg
+is not sweeping like a pendulum": the warped stride measures ~2.18, a plain one 1.57. Derive
+thresholds like this rather than picking a number that looks right.
+
+**Measure a bone's LOCAL yaw, not its world yaw, when checking for lag.** Composing the
+stride's pitch and roll produces a yaw component under Euler decomposition — that cross-talk
+read as 1.2 degrees of head lag on a walker with none, which is above any sensible threshold.
+The neck's local yaw is exactly `headTurn + lag`, so its *range* across a stride is exactly the
+lag (a constant cancels out of a range; it does not cancel out of a magnitude).
+
+**A stale `Library/` in a verify stage will serve you the old prefab.** Zeroing four fields in
+`ZombieVisuals` and re-running in an existing stage reported the *original* values at runtime,
+while a `Debug.Log` change in the same run proved the assembly had recompiled. Scripts
+recompiled; the prefab did not re-import. Always stage fresh before trusting a break test.
+
 **The foot is parented to the knee, so it needs an ankle or it points like a ballerina.**
 `ZombieVisuals.LevelFoot` gives the foot a world-space orientation instead of an inherited
 one. Without it a bent knee drives the toe through the floor, and it was most of the residual
@@ -267,7 +283,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

@@ -9920,6 +9920,196 @@ namespace ZombieHouse.EditorTools
                 Debug.LogError($"[Colour] FAIL - {problems} problem(s).");
         }
 
+        /// <summary>
+        /// Watches a walker actually walk, and asserts the four things that separate a
+        /// body from a set of limbs hinged to a post.
+        ///
+        /// None of these is visible by reading the code, and none of them shows up in a
+        /// screenshot either — they are all properties of motion over a stride, so the
+        /// only way to check them is to run the cycle and measure it.
+        ///
+        /// COUNTER-ROTATION. A leg cannot swing forward without the hip on that side
+        /// coming with it, and the shoulders answer the other way. Before this, every
+        /// rotation in the rig was pitch or roll and Y was zero from the pelvis to the
+        /// skull — so the measure is the correlation between pelvis yaw and shoulder yaw
+        /// across the stride, which has to be negative.
+        ///
+        /// WEIGHT. The body moves over the leg carrying it. A rig whose lateral offset is
+        /// pinned at zero is being carried along a rail.
+        ///
+        /// NOT A PENDULUM. This is the one worth deriving rather than guessing. For a
+        /// plain sine the ratio of peak angular speed to mean angular speed is exactly
+        /// pi/2 — 1.571 — and no amount of amplitude changes that, because it is a
+        /// property of the shape. Warping the phase raises it. So the test is not "does
+        /// the leg move" but "does it move in a way a sine cannot", and 1.571 is the
+        /// number the threshold is set against rather than one somebody liked.
+        ///
+        /// LAG. A skull bolted to a turning spine arrives exactly when the spine does, and
+        /// everything arriving at once is the clearest possible signal that a thing has no
+        /// mass.
+        /// </summary>
+        [MenuItem("Zombie House/Test Gait", false, 57)]
+        public static void TestGait()
+        {
+            const float Speed = 2.2f;
+            const int Frames = 600;
+            const float Dt = 1f / 60f;
+
+            // A plain sine's peak-to-mean angular speed. Derived, not chosen: max|cos| is
+            // 1 and the mean of |cos| over a cycle is 2/pi, so the ratio is pi/2.
+            const float Pendulum = Mathf.PI / 2f;
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
+            if (prefab == null)
+            {
+                Debug.LogError("[Gait] No zombie prefab — run Build Level 1 Scene first.");
+                return;
+            }
+
+            // Deliberately no floor. With nothing to raycast against, foot placement backs
+            // off and leaves the legs to the walk cycle, which is what is under test here.
+            EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var zombie = Object.Instantiate(prefab);
+            zombie.transform.position = Vector3.zero;
+            zombie.transform.rotation = Quaternion.identity;
+
+            var agent = zombie.GetComponent<NavMeshAgent>();
+            if (agent != null) agent.enabled = false;
+
+            var visuals = zombie.GetComponent<ZombieVisuals>();
+            var rig = zombie.GetComponent<ZombieRig>();
+
+            if (visuals == null || rig == null || rig.Bones == null || !rig.Bones.IsComplete)
+            {
+                Debug.LogError("[Gait] The prefab has no complete rig to pose.");
+                Object.DestroyImmediate(zombie);
+                return;
+            }
+
+            visuals.Initialise();
+
+            Transform root = zombie.transform;
+            Transform hip = rig.Bones.HipLeft;
+
+            double yawProduct = 0d;
+            float lateralLow = float.MaxValue, lateralHigh = float.MinValue;
+            float lagLow = float.MaxValue, lagHigh = float.MinValue;
+            float peakStep = 0f;
+            double totalStep = 0d;
+            float previousSwing = float.NaN;
+            int steps = 0;
+
+            int problems = 0;
+
+            try
+            {
+                for (int i = 0; i < Frames; i++)
+                {
+                    visuals.Tick(Dt, Speed);
+
+                    float pelvisYaw = Yaw(root, rig.Bones.Rig);
+                    float shoulderYaw = Yaw(root, rig.Bones.Spine);
+
+                    yawProduct += pelvisYaw * shoulderYaw;
+
+                    // Read off the neck's own local yaw, and as a range rather than a
+                    // magnitude. Two traps avoided in one line.
+                    //
+                    // A magnitude would measure the constant head turn every walker gets
+                    // from ZombieAppearance rather than the lag; a range cancels any
+                    // constant. And a WORLD yaw picks up several degrees of cross-talk
+                    // that is not lag at all — composing the stride's pitch and roll
+                    // produces a yaw component under Euler decomposition, which read as
+                    // 1.2 degrees of lag on a walker that had none. The neck's local yaw
+                    // is exactly headTurn plus lag, so its range is exactly the lag.
+                    float neckYaw = Mathf.DeltaAngle(0f, rig.Bones.Neck.localEulerAngles.y);
+                    lagLow = Mathf.Min(lagLow, neckYaw);
+                    lagHigh = Mathf.Max(lagHigh, neckYaw);
+
+                    float lateral = rig.Bones.Rig.localPosition.x;
+                    lateralLow = Mathf.Min(lateralLow, lateral);
+                    lateralHigh = Mathf.Max(lateralHigh, lateral);
+
+                    // The leg's own angle, which is what the stride shape actually is.
+                    float swing = Mathf.DeltaAngle(0f, hip.localEulerAngles.x);
+                    if (!float.IsNaN(previousSwing))
+                    {
+                        float step = Mathf.Abs(swing - previousSwing);
+                        peakStep = Mathf.Max(peakStep, step);
+                        totalStep += step;
+                        steps++;
+                    }
+                    previousSwing = swing;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(zombie);
+            }
+
+            float headLag = lagHigh - lagLow;
+            float meanStep = steps > 0 ? (float)(totalStep / steps) : 0f;
+            float shape = meanStep > 1e-5f ? peakStep / meanStep : 0f;
+            float lateralSwing = lateralHigh - lateralLow;
+
+            Debug.Log($"[Gait] yaw correlation {yawProduct / Frames:0.000}, " +
+                      $"lateral swing {lateralSwing:0.000} m, " +
+                      $"head lag swing {headLag:0.00} deg, " +
+                      $"stride shape {shape:0.000} (a plain sine is {Pendulum:0.000})");
+
+            // --- counter-rotation ---------------------------------------------
+            if (yawProduct >= 0d)
+            {
+                Debug.LogError($"[Gait] Pelvis and shoulder yaw correlate at " +
+                               $"{yawProduct / Frames:0.000} — they are not turning against " +
+                               "each other. A body that does not counter-rotate is a set of " +
+                               "limbs hinged to a post.");
+                problems++;
+            }
+
+            // --- weight --------------------------------------------------------
+            if (lateralSwing < 0.02f)
+            {
+                Debug.LogError($"[Gait] The body shifts {lateralSwing:0.000} m sideways across " +
+                               "a stride. Nothing is moving over the leg carrying it, so the " +
+                               "walker is being drawn along a rail.");
+                problems++;
+            }
+
+            // --- not a pendulum -------------------------------------------------
+            if (shape < Pendulum * 1.15f)
+            {
+                Debug.LogError($"[Gait] Stride shape is {shape:0.000} against {Pendulum:0.000} " +
+                               "for a plain sine. The leg is sweeping like a pendulum, which is " +
+                               "what a mechanism does and what a body does not.");
+                problems++;
+            }
+
+            // --- lag -------------------------------------------------------------
+            if (headLag < 1f)
+            {
+                Debug.LogError($"[Gait] The head's offset from the spine varies by only " +
+                               $"{headLag:0.00} deg across a stride. Bolted on, so it arrives " +
+                               "exactly when the shoulders do — which is how a thing with no " +
+                               "mass moves.");
+                problems++;
+            }
+
+            if (problems == 0)
+                Debug.Log("[Gait] PASS — hips and shoulders turn against each other, the weight " +
+                          "moves, the stride is not a sine, and the head trails the body.");
+            else
+                Debug.LogError($"[Gait] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>A bone's yaw in the walker's own frame, wrapped to +/-180.</summary>
+        private static float Yaw(Transform root, Transform bone)
+        {
+            Quaternion local = Quaternion.Inverse(root.rotation) * bone.rotation;
+            return Mathf.DeltaAngle(0f, local.eulerAngles.y);
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
