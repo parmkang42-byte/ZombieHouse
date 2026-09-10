@@ -9682,12 +9682,22 @@ namespace ZombieHouse.EditorTools
                     tallest = Mathf.Max(tallest, Mathf.Abs(v.y));
                 }
 
-                if (widest > 0.5f + 1e-3f || tallest > 1f + 1e-3f)
+                // Only the parts drawn over a collider have to stay inside one. Teeth sit
+                // in the jaw box, which has no collider either, so holding them to a
+                // capsule's radius would just force a mouth too small to see.
+                if (BodyMesh.WearsACollider(part) && (widest > 0.5f + 1e-3f || tallest > 1f + 1e-3f))
                 {
                     Debug.LogError($"[Body] {part} reaches {widest:0.000} wide and {tallest:0.000} " +
                                    "tall, outside the primitive it replaces. That is geometry the " +
                                    "player can see and cannot hit.");
                     problems++;
+                }
+
+                if (part == BodyMesh.Part.Teeth)
+                {
+                    Debug.Log($"[Body] {part,-9} {vertices.Length,4} verts, " +
+                              $"{mesh.triangles.Length / 3,4} tris, {widest:0.000} wide.");
+                    continue;
                 }
 
                 if (part == BodyMesh.Part.Skull)
@@ -9732,11 +9742,116 @@ namespace ZombieHouse.EditorTools
                 problems += CheckCollider(prefab, "Forearm_R", typeof(CapsuleCollider));
             }
 
+            problems += CheckTheFace();
+
             if (problems == 0)
-                Debug.Log("[Body] PASS — limbs taper, everything stays inside its own collider, " +
-                          "and the hitboxes are the primitives they always were.");
+                Debug.Log("[Body] PASS — limbs taper, the sockets are sunk under the brow, the " +
+                          "face is cosmetic, and the hitboxes are the primitives they always were.");
             else
                 Debug.LogError($"[Body] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The face, measured rather than looked at.
+        ///
+        /// THE SOCKETS ARE ACTUALLY SUNK. This is the whole point of the exercise and it
+        /// is the one thing that cannot be confirmed by seeing the parts exist — a socket
+        /// is frightening because of how far back it is, and "there is an eye object at
+        /// these coordinates" says nothing about that. So the skull's radius is sampled
+        /// along the orbit direction and along the brow above it, and the orbit has to be
+        /// meaningfully the shorter of the two. A brow that does not overhang casts no
+        /// shadow into the socket, and then the socket is just a dark spot painted on.
+        ///
+        /// THE FACE IS COSMETIC. Eyes, glints and teeth must carry no collider. The head's
+        /// hitbox is the skull sphere and it is worth exactly 2.5x; a stray collider on a
+        /// tooth would be a second, differently-shaped, differently-weighted thing to shoot
+        /// at, sitting proud of the skull where it is easiest to hit.
+        /// </summary>
+        private static int CheckTheFace()
+        {
+            int problems = 0;
+
+            // --- is the orbit behind the brow? ---------------------------------
+            Mesh skull = BodyMesh.Shared(BodyMesh.Part.Skull);
+            if (skull == null) return 1;
+
+            float orbit = RadiusAlong(skull, new Vector3(0.52f, 0.12f, 0.84f));
+            float brow = RadiusAlong(skull, new Vector3(0f, 0.34f, 0.80f));
+
+            Debug.Log($"[Body] skull radius: orbit {orbit:0.000}, brow {brow:0.000} " +
+                      $"({(1f - orbit / brow) * 100f:0} % sunk)");
+
+            if (orbit > brow * 0.88f)
+            {
+                Debug.LogError($"[Body] The orbit sits at {orbit:0.000} against a brow at " +
+                               $"{brow:0.000} — barely behind it. A socket is frightening because " +
+                               "of how deep it is, and a brow that does not overhang throws no " +
+                               "shadow into one.");
+                problems++;
+            }
+
+            // --- and is all of it cosmetic? ------------------------------------
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
+            if (prefab == null) return problems;
+
+            string[] face = { "EyeSocketL", "EyeSocketR", "EyeGlintL", "EyeGlintR",
+                              "TeethUpper", "TeethLower", "Jaw" };
+
+            foreach (string name in face)
+            {
+                Transform part = null;
+                foreach (Transform t in prefab.GetComponentsInChildren<Transform>(true))
+                    if (t.name == name) { part = t; break; }
+
+                if (part == null)
+                {
+                    Debug.LogError($"[Body] The head has no '{name}'.");
+                    problems++;
+                    continue;
+                }
+
+                if (part.GetComponent<Collider>() != null)
+                {
+                    Debug.LogError($"[Body] '{name}' carries a collider. The head's hitbox is the " +
+                                   "skull sphere and it is worth 2.5x — a second one out here " +
+                                   "changes what a headshot is.");
+                    problems++;
+                }
+
+                var renderer = part.GetComponent<Renderer>();
+                if (renderer == null || renderer.sharedMaterial == null)
+                {
+                    Debug.LogError($"[Body] '{name}' has no material and will render magenta.");
+                    problems++;
+                }
+            }
+
+            return problems;
+        }
+
+        /// <summary>
+        /// How far the mesh reaches in one direction — the vertex lying most nearly along
+        /// it. Used to compare one part of a face against another.
+        /// </summary>
+        private static float RadiusAlong(Mesh mesh, Vector3 direction)
+        {
+            direction = direction.normalized;
+
+            float best = -2f;
+            float radius = 0f;
+
+            foreach (Vector3 v in mesh.vertices)
+            {
+                if (v.sqrMagnitude < 1e-8f) continue;
+
+                float alignment = Vector3.Dot(v.normalized, direction);
+                if (alignment <= best) continue;
+
+                best = alignment;
+                radius = v.magnitude;
+            }
+
+            return radius;
         }
 
         /// <summary>Mean radius of the vertices nearest one height on a limb.</summary>
@@ -10357,6 +10472,14 @@ namespace ZombieHouse.EditorTools
                                    ProtoMaterials.SurfaceKind.Flesh, 1.5f, 0.30f, 0f);
             CreateTexturedMaterial("hair", new Color(0.11f, 0.09f, 0.08f),
                                    ProtoMaterials.SurfaceKind.Hair, 1.5f, 0.06f, 0f);
+
+            // The face. Assets, not just ProtoMaterials properties — third time this note
+            // appears in this file and it has been earned every time.
+            CreateMaterial("tooth", new Color(0.74f, 0.71f, 0.58f), 0.45f, 0f);
+
+            Material eyeGlint = CreateMaterial("eyeglint", new Color(0.42f, 0.40f, 0.34f), 0.6f, 0f);
+            ProtoMaterials.MakeEmissive(eyeGlint, new Color(0.9f, 0.86f, 0.72f));
+            EditorUtility.SetDirty(eyeGlint);
             CreateMaterial("blade", new Color(0.62f, 0.64f, 0.68f), 0.75f, 0.9f);
 
             // Scope glass: alpha blending has to be switched on explicitly, not just by

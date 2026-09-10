@@ -124,6 +124,55 @@ namespace ZombieHouse.Enemies
             return root;
         }
 
+        /// <summary>
+        /// The face: what is in the sockets, and what is in the mouth.
+        ///
+        /// The skull mesh does the hard part — it carves the orbits deep and hangs a heavy
+        /// brow over them, so the sockets are dark whatever the light is doing. That only
+        /// became worth doing when the level lights started casting shadows; before it, a
+        /// hollow shaded the same as a bulge.
+        ///
+        /// What goes IN the sockets is two things and the order matters. A dark mass that
+        /// fills the hollow, so there is no skin at the back of it catching light, and then
+        /// a very small catchlight sitting just proud of that. The catchlight is the whole
+        /// effect: an empty socket reads as a skull, and a skull is not frightening because
+        /// it is not looking at anything. One wet point of light says something is still in
+        /// there, and that is a different feeling entirely.
+        ///
+        /// The teeth are two parts rather than eighteen. See BodyMesh.Teeth.
+        /// </summary>
+        private static void BuildFace(Transform head)
+        {
+            for (int side = -1; side <= 1; side += 2)
+            {
+                string suffix = side < 0 ? "L" : "R";
+                float x = 0.040f * side;
+
+                // Fills the orbit so no lit skin shows at the back of it.
+                CreatePart(head, "EyeSocket" + suffix, PrimitiveType.Sphere,
+                    new Vector3(x, 0.090f, 0.062f), new Vector3(0.044f, 0.042f, 0.026f),
+                    ProtoMaterials.Gore, null, 0f, false);
+
+                // And the thing that is still looking.
+                CreatePart(head, "EyeGlint" + suffix, PrimitiveType.Sphere,
+                    new Vector3(x, 0.090f, 0.072f), new Vector3(0.015f, 0.015f, 0.010f),
+                    ProtoMaterials.EyeGlint, null, 0f, false);
+            }
+
+            // Upper row hangs from the skull, tips down.
+            CreatePart(head, "TeethUpper", PrimitiveType.Cube, BodyMesh.Part.Teeth,
+                new Vector3(0f, -0.004f, 0.070f), new Vector3(0.082f, 0.019f, 0.026f),
+                ProtoMaterials.Tooth, null, 0f, false);
+
+            // Lower row turned through 180 degrees so it points up out of the jaw. A
+            // rotation rather than a negative scale: a mirrored scale inverts the winding
+            // and the row renders inside out.
+            var lower = CreatePart(head, "TeethLower", PrimitiveType.Cube, BodyMesh.Part.Teeth,
+                new Vector3(0f, -0.050f, 0.072f), new Vector3(0.076f, 0.015f, 0.024f),
+                ProtoMaterials.Tooth, null, 0f, false);
+            lower.transform.localRotation = Quaternion.Euler(0f, 0f, 180f);
+        }
+
         // ---- torso ----------------------------------------------------------
 
         private static void BuildTorso(Transform rig, ZombieHealth health, ZombieBones bones)
@@ -183,18 +232,20 @@ namespace ZombieHouse.Enemies
             CreatePart(head, "Skull", PrimitiveType.Sphere,
                 new Vector3(0f, 0.08f, 0f), new Vector3(0.19f, 0.23f, 0.21f),
                 ProtoMaterials.Skin, health, 2.5f, true, BodyMesh.Shared(BodyMesh.Part.Skull));
-            CreatePart(head, "Jaw", PrimitiveType.Cube,
-                new Vector3(0f, -0.01f, 0.05f), new Vector3(0.12f, 0.07f, 0.10f),
+            // The jaw hangs. It is dropped and tipped open rather than closed against the
+            // skull, because a slack jaw is the difference between a corpse and a person
+            // with their mouth shut — and because a mouth that is open is a mouth you can
+            // see the teeth in.
+            var jaw = CreatePart(head, "Jaw", PrimitiveType.Cube,
+                new Vector3(0f, -0.045f, 0.055f), new Vector3(0.105f, 0.062f, 0.10f),
                 ProtoMaterials.Skin, null, 0f, false);
+            jaw.transform.localRotation = Quaternion.Euler(11f, 0f, 0f);
+
             CreatePart(head, "Hair", PrimitiveType.Sphere,
                 new Vector3(0f, 0.12f, -0.02f), new Vector3(0.19f, 0.17f, 0.20f),
                 ProtoMaterials.Hair, null, 0f, false);
-            CreatePart(head, "EyeSocketL", PrimitiveType.Sphere,
-                new Vector3(-0.05f, 0.09f, 0.09f), new Vector3(0.05f, 0.05f, 0.03f),
-                ProtoMaterials.Gore, null, 0f, false);
-            CreatePart(head, "EyeSocketR", PrimitiveType.Sphere,
-                new Vector3(0.05f, 0.09f, 0.09f), new Vector3(0.05f, 0.05f, 0.03f),
-                ProtoMaterials.Gore, null, 0f, false);
+
+            BuildFace(head);
 
             // --- arms --------------------------------------------------------
             bones.ShoulderLeft = BuildArm(spine, health, -1f);

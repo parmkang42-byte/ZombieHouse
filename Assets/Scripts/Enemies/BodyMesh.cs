@@ -32,7 +32,18 @@ namespace ZombieHouse.Enemies
     public static class BodyMesh
     {
         /// <summary>The parts that get a generated mesh. Clothing reuses the limb under it.</summary>
-        public enum Part { Thigh, Shin, UpperArm, Forearm, Skull }
+        public enum Part { Thigh, Shin, UpperArm, Forearm, Skull, Teeth }
+
+        /// <summary>
+        /// Whether a part stands in for a primitive that carries a collider.
+        ///
+        /// The limbs and the skull do, so their geometry has to stay inside the capsule or
+        /// sphere it is drawn over — anything outside is something the player can see and
+        /// cannot shoot. Teeth carry no collider at all, exactly like the jaw box they sit
+        /// in, so that constraint does not apply and applying it anyway would only force
+        /// a mouth too small to read.
+        /// </summary>
+        public static bool WearsACollider(Part part) => part != Part.Teeth;
 
         private static readonly Dictionary<Part, Mesh> Cache = new Dictionary<Part, Mesh>();
 
@@ -84,6 +95,8 @@ namespace ZombieHouse.Enemies
 
                 case Part.UpperArm: return Limb("UpperArm", 1f, 0.70f, 0.06f, 0.68f);
                 case Part.Forearm: return Limb("Forearm", 0.92f, 0.54f, 0.08f, 0.74f);
+
+                case Part.Teeth: return Teeth();
 
                 default: return Skull();
             }
@@ -211,11 +224,32 @@ namespace ZombieHouse.Enemies
                     // The brow. A ridge across the front above where the eyes are, and the
                     // single feature that most makes a head read as a skull rather than a
                     // ball with a face drawn on it.
-                    f += 0.09f * Bump(z, 0.80f, 0.45f) * Bump(y, 0.18f, 0.30f);
+                    f += 0.11f * Bump(z, 0.80f, 0.45f) * Bump(y, 0.34f, 0.26f);
 
                     // Temples, scooped in at the sides above the cheekbone. This is the
                     // hollow that reads as gaunt.
                     f -= 0.08f * Bump(Mathf.Abs(x), 0.88f, 0.35f) * Bump(y, 0.30f, 0.42f);
+
+                    // THE ORBITS, and they are the whole face.
+                    //
+                    // Eyes were two flat discs painted on the front of a sphere. What
+                    // frightens anybody about a face is not what is in the sockets but how
+                    // far back it is: a deep orbit under a heavy brow is dark whatever the
+                    // light is doing, and the dark is what the eye reads as a skull.
+                    //
+                    // This only became worth doing once the level lights started casting.
+                    // Before that a hollow was shaded the same as a bulge and carving one
+                    // bought nothing at all.
+                    float orbit = Bump(Mathf.Abs(x), 0.52f, 0.32f)
+                                * Bump(y, 0.12f, 0.36f)
+                                * Bump(z, 0.84f, 0.42f);
+                    f -= 0.17f * orbit;
+
+                    // The nose has gone. Not a wound, just absent — the cartilage is the
+                    // first thing to go and what is left is a notch above the teeth.
+                    f -= 0.11f * Bump(Mathf.Abs(x), 0f, 0.24f)
+                               * Bump(y, -0.04f, 0.30f)
+                               * Bump(z, 0.95f, 0.32f);
 
                     // Cheekbones, out and forward.
                     f += 0.05f * Bump(Mathf.Abs(x), 0.72f, 0.30f)
@@ -253,6 +287,100 @@ namespace ZombieHouse.Enemies
             }
 
             return Finish("Skull", vertices, uv, triangles);
+        }
+
+        // ------------------------------------------------------------------ teeth
+
+        /// <summary>
+        /// One row of teeth as a single mesh, gum at y = 0 and tips at y = -1.
+        ///
+        /// ONE MESH, NOT TWELVE OBJECTS. A tooth apiece would be twelve extra GameObjects
+        /// on every body in the level — five hundred and fifty across a full house — for
+        /// something that never moves relative to the jaw it sits in. The whole row is
+        /// welded into one mesh and placed as one part, which costs two parts a head.
+        ///
+        /// The row is deliberately ragged. Even teeth read as a costume; what is
+        /// unsettling is the irregularity — one shorter, one turned, one simply gone. The
+        /// unevenness is a function of the tooth's index rather than a random number, so
+        /// the mesh is identical on every rebuild and the .asset does not churn.
+        ///
+        /// The lower row is the same mesh turned through 180 degrees, which flips it
+        /// point-upward and mirrors it across the mouth. A rotation preserves winding
+        /// where a negative scale would invert it and turn the row inside out.
+        /// </summary>
+        private static Mesh Teeth()
+        {
+            const int Count = 9;
+
+            var vertices = new List<Vector3>();
+            var uv = new List<Vector2>();
+            var triangles = new List<int>();
+
+            for (int i = 0; i < Count; i++)
+            {
+                float t = Count > 1 ? i / (float)(Count - 1) : 0.5f;
+                float centre = Mathf.Lerp(-0.42f, 0.42f, t);
+
+                // Deterministic raggedness. Two incommensurate waves so the pattern does
+                // not repeat across the row and read as a texture.
+                float wobble = Mathf.Sin(i * 2.399f) * 0.5f + 0.5f;
+                float second = Mathf.Sin(i * 5.077f) * 0.5f + 0.5f;
+
+                // One gap. A missing tooth is worth more than the nine that are there.
+                if (i == 2) continue;
+
+                float length = Mathf.Lerp(0.55f, 1f, wobble);
+                float halfWidth = Mathf.Lerp(0.030f, 0.052f, second);
+                float halfDepth = 0.030f;
+
+                // A little lean, so nothing in the mouth is quite straight.
+                float lean = (second - 0.5f) * 0.18f;
+
+                Vector3 apex = new Vector3(centre + lean * length, -length, 0f);
+
+                Vector3[] baseRing =
+                {
+                    new Vector3(centre - halfWidth, 0f, -halfDepth),
+                    new Vector3(centre + halfWidth, 0f, -halfDepth),
+                    new Vector3(centre + halfWidth, 0f, halfDepth),
+                    new Vector3(centre - halfWidth, 0f, halfDepth),
+                };
+
+                // Every face gets its own vertices so the light breaks along the ridges
+                // instead of rounding them off — the same reason FangMesh is built this
+                // way, and the reason a tooth reads as sharp at the distance you meet one.
+                for (int e = 0; e < 4; e++)
+                {
+                    Vector3 a = baseRing[e];
+                    Vector3 b = baseRing[(e + 1) % 4];
+
+                    int v = vertices.Count;
+                    vertices.Add(a);
+                    vertices.Add(b);
+                    vertices.Add(apex);
+
+                    uv.Add(new Vector2(0f, 0f));
+                    uv.Add(new Vector2(1f, 0f));
+                    uv.Add(new Vector2(0.5f, 1f));
+
+                    triangles.Add(v);
+                    triangles.Add(v + 2);
+                    triangles.Add(v + 1);
+                }
+
+                // Close the gum end, so a tooth seen from below is not a hollow shell.
+                int baseStart = vertices.Count;
+                foreach (Vector3 corner in baseRing)
+                {
+                    vertices.Add(corner);
+                    uv.Add(new Vector2(corner.x - centre + 0.5f, corner.z + 0.5f));
+                }
+
+                triangles.Add(baseStart); triangles.Add(baseStart + 1); triangles.Add(baseStart + 2);
+                triangles.Add(baseStart); triangles.Add(baseStart + 2); triangles.Add(baseStart + 3);
+            }
+
+            return Finish("Teeth", vertices.ToArray(), uv.ToArray(), triangles.ToArray());
         }
 
         // ------------------------------------------------------------------ shared

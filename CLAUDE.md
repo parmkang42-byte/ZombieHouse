@@ -24,6 +24,22 @@ animated procedurally by `ZombieVisuals`. Blender is used as a *headless mesh co
 `.py` in `Tools_Props/` is the source, the `.obj` in `Assets/Resources/Props/` is a committed
 build artifact. Preserve this unless the user says they have assets to import.
 
+**The face is geometry, not decals, and all of it is cosmetic.** `BodyMesh.Skull` carves the
+orbits 19% deeper than the brow above them, so the socket holds shadow whatever the light is
+doing — which only became worth doing once the level lights started casting. Eyes, catchlights
+and both tooth rows carry **no collider**: the head's hitbox is the skull sphere at 2.5x, and a
+stray collider out on a tooth would be a second, easier thing to shoot at. `Test Body Meshes`
+measures the orbit depth against the brow rather than checking the parts exist — "there is an
+eye object at these coordinates" says nothing about how far back it is.
+
+**A tooth row is one mesh, not one object per tooth.** Twelve GameObjects per head is ~550
+across a full house for something that never moves relative to the jaw. `BodyMesh.Part.Teeth`
+welds the row; the lower jaw uses the same mesh rotated 180° (a rotation preserves winding, a
+mirrored scale inverts it and renders the row inside out).
+
+**`BodyMesh.WearsACollider` decides which parts must stay inside radius 0.5.** Limbs and the
+skull must; teeth must not be held to it or the mouth is too small to read.
+
 **A generated body mesh replaces what a part *draws*, never what it *collides* with.**
 Same rule as `PropLibrary.Dress`, one level in: `CreatePart` swaps the MeshFilter and leaves
 the primitive's own collider alone, so the head is still the sphere carrying the 2.5x critical

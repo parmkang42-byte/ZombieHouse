@@ -329,6 +329,22 @@ namespace ZombieHouse.Level
             GetTextured("gore", new Color(0.26f, 0.03f, 0.03f), SurfaceKind.Flesh, 1.5f, 0.30f);
         public static Material Hair =>
             GetTextured("hair", new Color(0.11f, 0.09f, 0.08f), SurfaceKind.Hair, 1.5f, 0.06f);
+
+        /// <summary>Old enamel. Yellowed, and shinier than anything else on the body.</summary>
+        public static Material Tooth => Get("tooth", new Color(0.74f, 0.71f, 0.58f), 0.45f);
+
+        /// <summary>
+        /// The catchlight in a sunken socket.
+        ///
+        /// Emissive, but at 0.9 — deliberately BELOW every level's bloom threshold, where
+        /// everything else that glows in this game sits between 1.5 and 2.8 to clear it.
+        /// A zombie with headlamps for eyes is a video game monster. What is wanted is the
+        /// wet point of light that says something in there is still tracking you, and that
+        /// only reads if it does not bloom into a smear.
+        /// </summary>
+        public static Material EyeGlint =>
+            GetEmissive("eyeglint", new Color(0.42f, 0.40f, 0.34f),
+                        new Color(0.9f, 0.86f, 0.72f), 0.6f);
         public static Material Blade => Get("blade", new Color(0.62f, 0.64f, 0.68f), 0.75f, 0.9f);
 
         /// The power cell: a scuffed industrial case with a warning stripe.
