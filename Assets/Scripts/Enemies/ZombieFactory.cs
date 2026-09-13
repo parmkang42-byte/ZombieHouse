@@ -141,6 +141,90 @@ namespace ZombieHouse.Enemies
         ///
         /// The teeth are two parts rather than eighteen. See BodyMesh.Teeth.
         /// </summary>
+        /// <summary>
+        /// Where the Skull part sits on the head bone, and its size. Every sculpted head mesh is
+        /// written in this part's space, so each of the parts that wears one is given exactly
+        /// this transform and nothing else. Test Heads reads the values off the built prefab
+        /// rather than copying them, so these are the only copy.
+        /// </summary>
+        private static readonly Vector3 SkullPosition = new Vector3(0f, 0.08f, 0f);
+        private static readonly Vector3 SkullScale = new Vector3(0.19f, 0.23f, 0.21f);
+
+        /// <summary>
+        /// The head Blender sculpted: skull, jaw, wounds and hair as one continuous surface.
+        ///
+        /// Four parts, one transform. Tools_Props/zombiehead.py built the jaw already hanging
+        /// open and the lower teeth already rotated with it, so none of these parts is moved
+        /// or turned here. That is the whole reason the sculpt could lose the seam the box jaw
+        /// always had: nothing on the C# side gets a say in where the mouth is.
+        ///
+        /// ZombieAppearance swaps in a different variant per walker; this builds variant 0.
+        /// </summary>
+        private static void BuildSculptedHead(Transform head, HeadLibrary.Head sculpt)
+        {
+            CreatePart(head, "Jaw", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Skin, null, 0f, false, sculpt.Jaw);
+
+            // Not "SkullGore". ZombieRagdoll and ZombieDismemberment both find the head by
+            // partName.StartsWith("Skull"), and a second part matching that would be taken
+            // for a second head.
+            CreatePart(head, "FaceGore", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Cavity, null, 0f, false, sculpt.Gore);
+
+            CreatePart(head, "Hair", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Hair, null, 0f, false, sculpt.Hair);
+
+            // The eyes. These positions are copied into zombiehead.py, which carves the
+            // orbits around them -- two copies that must agree, so Test Heads raycasts the
+            // exported meshes from in front of each eye to prove it still sits in its socket.
+            for (int side = -1; side <= 1; side += 2)
+            {
+                string suffix = side < 0 ? "L" : "R";
+                float x = 0.035f * side;
+
+                // Filmed over and wet. Glossy, so it catches whatever light is going on its
+                // own; a dead eye deep in a black socket is what the face is built around.
+                CreatePart(head, "EyeSocket" + suffix, PrimitiveType.Sphere,
+                    new Vector3(x, 0.088f, 0.051f), new Vector3(0.0192f, 0.0176f, 0.0160f),
+                    ProtoMaterials.DeadEye, null, 0f, false);
+
+                // The catchlight: small, and up and to the same side in both eyes, where one
+                // light would put it. Centred, a bright dot is a cartoon pupil; mirrored, it
+                // looks lit from two directions.
+                CreatePart(head, "EyeGlint" + suffix, PrimitiveType.Sphere,
+                    new Vector3(x + 0.0028f, 0.0908f, 0.0582f), new Vector3(0.0032f, 0.0032f, 0.0020f),
+                    ProtoMaterials.EyeGlint, null, 0f, false);
+            }
+
+            CreatePart(head, "TeethUpper", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Tooth, null, 0f, false, HeadLibrary.TeethUpper);
+            CreatePart(head, "TeethLower", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Tooth, null, 0f, false, HeadLibrary.TeethLower);
+        }
+
+        /// <summary>
+        /// The head as it was before Blender: a box jaw, a hair sphere, and the procedural
+        /// face. Used when the sculpted heads have not been built, so a clone without Blender
+        /// still plays -- the same no-op-when-missing rule PropLibrary follows.
+        /// </summary>
+        private static void BuildPrimitiveHead(Transform head)
+        {
+            // The jaw hangs. It is dropped and tipped open rather than closed against the
+            // skull, because a slack jaw is the difference between a corpse and a person
+            // with their mouth shut — and because a mouth that is open is a mouth you can
+            // see the teeth in.
+            var jaw = CreatePart(head, "Jaw", PrimitiveType.Cube,
+                new Vector3(0f, -0.045f, 0.055f), new Vector3(0.105f, 0.062f, 0.10f),
+                ProtoMaterials.Skin, null, 0f, false);
+            jaw.transform.localRotation = Quaternion.Euler(11f, 0f, 0f);
+
+            CreatePart(head, "Hair", PrimitiveType.Sphere,
+                new Vector3(0f, 0.12f, -0.02f), new Vector3(0.19f, 0.17f, 0.20f),
+                ProtoMaterials.Hair, null, 0f, false);
+
+            BuildFace(head);
+        }
+
         private static void BuildFace(Transform head)
         {
             for (int side = -1; side <= 1; side += 2)
@@ -228,24 +312,21 @@ namespace ZombieHouse.Enemies
             head.localPosition = new Vector3(0f, 0.08f, 0f);
             bones.Head = head;
 
-            // Skull is the critical hitbox; jaw and hair hang off it cosmetically.
-            CreatePart(head, "Skull", PrimitiveType.Sphere,
-                new Vector3(0f, 0.08f, 0f), new Vector3(0.19f, 0.23f, 0.21f),
-                ProtoMaterials.Skin, health, 2.5f, true, BodyMesh.Shared(BodyMesh.Part.Skull));
-            // The jaw hangs. It is dropped and tipped open rather than closed against the
-            // skull, because a slack jaw is the difference between a corpse and a person
-            // with their mouth shut — and because a mouth that is open is a mouth you can
-            // see the teeth in.
-            var jaw = CreatePart(head, "Jaw", PrimitiveType.Cube,
-                new Vector3(0f, -0.045f, 0.055f), new Vector3(0.105f, 0.062f, 0.10f),
-                ProtoMaterials.Skin, null, 0f, false);
-            jaw.transform.localRotation = Quaternion.Euler(11f, 0f, 0f);
+            // Skull is the critical hitbox; everything else on the head hangs off it
+            // cosmetically. Its mesh is the Blender sculpt when one has been built and the
+            // procedural skull otherwise -- either way it is drawn inside this same sphere
+            // collider, so what a headshot is does not depend on which one you got.
+            bool sculpted = HeadLibrary.Available;
+            HeadLibrary.Head sculpt = sculpted ? HeadLibrary.Variant(0) : default;
 
-            CreatePart(head, "Hair", PrimitiveType.Sphere,
-                new Vector3(0f, 0.12f, -0.02f), new Vector3(0.19f, 0.17f, 0.20f),
-                ProtoMaterials.Hair, null, 0f, false);
+            CreatePart(head, "Skull", PrimitiveType.Sphere, SkullPosition, SkullScale,
+                ProtoMaterials.Skin, health, 2.5f, true,
+                sculpted ? sculpt.Skull : BodyMesh.Shared(BodyMesh.Part.Skull));
 
-            BuildFace(head);
+            if (sculpted)
+                BuildSculptedHead(head, sculpt);
+            else
+                BuildPrimitiveHead(head);
 
             // --- arms --------------------------------------------------------
             bones.ShoulderLeft = BuildArm(spine, health, -1f);

@@ -9851,8 +9851,11 @@ namespace ZombieHouse.EditorTools
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
             if (prefab == null) return problems;
 
-            string[] face = { "EyeSocketL", "EyeSocketR", "EyeGlintL", "EyeGlintR",
-                              "TeethUpper", "TeethLower", "Jaw" };
+            // FaceGore exists only on a sculpted head, which is what a prefab built with the
+            // Blender heads present will have.
+            var face = new List<string> { "EyeSocketL", "EyeSocketR", "EyeGlintL", "EyeGlintR",
+                                          "TeethUpper", "TeethLower", "Jaw" };
+            if (HeadLibrary.Available) face.Add("FaceGore");
 
             foreach (string name in face)
             {
@@ -10282,6 +10285,431 @@ namespace ZombieHouse.EditorTools
             return Mathf.DeltaAngle(0f, local.eulerAngles.y);
         }
 
+        /// <summary>
+        /// The Blender heads, measured against the prefab that wears them.
+        ///
+        /// WHY THIS IS NOT A LIST OF THINGS THAT EXIST. The sculpt is authored in Blender and the
+        /// eyes are placed in C#, and those are two places that must agree -- which CLAUDE.md
+        /// says, from experience, they will not. So this reads the eye and teeth positions off
+        /// the built prefab, reads the geometry off the imported meshes, and fires rays from
+        /// in front of the face to see what a player would actually see. A socket that has
+        /// drifted buries its eye; a lip recess that has drifted buries the teeth. Neither
+        /// shows up as anything missing.
+        ///
+        /// ONE SURFACE. Skull, jaw and wounds are one sculpt cut into three meshes along the
+        /// collider and along every wound. If they were not cut from the same surface they
+        /// would not share the vertices on their borders, and a crack would show down the side
+        /// of the face -- which is what the separately-sculpted jaw had, twice. So every border
+        /// vertex of each piece must coincide with a vertex of one of the others.
+        ///
+        /// THE FACE LOOKS FORWARD. Blender and Unity disagree about handedness, and a mesh
+        /// imported the wrong way round still passes every size check with its face on the back
+        /// of its head. The wounds are nearly all at the front, so their centre must be too.
+        ///
+        /// ALL FOUR MESHES, EVERY WALKER. ZombieAppearance swaps a variant per walker, and a
+        /// skull from one variant with the wounds of another floats its sockets off its face.
+        /// </summary>
+        [MenuItem("Zombie House/Test Heads", false, 58)]
+        public static void TestHeads()
+        {
+            int problems = 0;
+            HeadLibrary.ClearCache();
+
+            if (!HeadLibrary.Available)
+            {
+                Debug.LogError("[Heads] No sculpted heads in Resources/Heads. Run " +
+                               "Tools_Props/zombiehead.py through Blender.");
+                return;
+            }
+
+            int count = HeadLibrary.Count;
+            if (count < 2)
+            {
+                Debug.LogError($"[Heads] Only {count} variant. A horde with one face is one face.");
+                problems++;
+            }
+
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(ZombiePrefabPath);
+            if (prefab == null)
+            {
+                Debug.LogError("[Heads] No zombie prefab — run Build Level 1 Scene first.");
+                return;
+            }
+
+            var rig = prefab.GetComponent<ZombieRig>();
+            Transform head = rig != null && rig.Bones != null ? rig.Bones.Head : null;
+            if (head == null)
+            {
+                Debug.LogError("[Heads] The prefab has no head bone.");
+                return;
+            }
+
+            Transform skullPart = head.Find("Skull");
+            if (skullPart == null)
+            {
+                Debug.LogError("[Heads] The head has no Skull part.");
+                return;
+            }
+
+            // --- the prefab wears a sculpted head, and wears it correctly --------------
+            if (skullPart.GetComponent<SphereCollider>() == null)
+            {
+                Debug.LogError("[Heads] The Skull lost its sphere collider — the 2.5x critical.");
+                problems++;
+            }
+
+            var skullFilter = skullPart.GetComponent<MeshFilter>();
+            if (skullFilter == null || HeadLibrary.IndexOfSkull(skullFilter.sharedMesh) < 0)
+            {
+                Debug.LogError("[Heads] The prefab's skull is not a sculpted head. It was built " +
+                               "without the Blender meshes present.");
+                problems++;
+            }
+
+            foreach (string name in new[] { "Jaw", "FaceGore", "Hair", "TeethUpper", "TeethLower" })
+            {
+                Transform part = head.Find(name);
+                if (part == null)
+                {
+                    Debug.LogError($"[Heads] The head has no '{name}'.");
+                    problems++;
+                    continue;
+                }
+
+                if (part.GetComponent<Collider>() != null)
+                {
+                    Debug.LogError($"[Heads] '{name}' carries a collider. It is cosmetic; the head's " +
+                                   "hitbox is the skull sphere and nothing else.");
+                    problems++;
+                }
+
+                // Same transform as the skull, because every sculpted mesh is in the skull
+                // part's space. A different position or scale is the whole mouth moving.
+                if ((part.localPosition - skullPart.localPosition).sqrMagnitude > 1e-10f ||
+                    (part.localScale - skullPart.localScale).sqrMagnitude > 1e-10f ||
+                    Quaternion.Angle(part.localRotation, skullPart.localRotation) > 0.01f)
+                {
+                    Debug.LogError($"[Heads] '{name}' is not on the skull's transform, so it is not " +
+                                   "where the sculpt put it.");
+                    problems++;
+                }
+            }
+
+            foreach (Transform t in prefab.GetComponentsInChildren<Transform>(true))
+            {
+                if (t != skullPart && t.name.StartsWith("Skull"))
+                {
+                    Debug.LogError($"[Heads] '{t.name}' starts with \"Skull\". ZombieRagdoll and " +
+                                   "ZombieDismemberment find the head by that prefix and would take " +
+                                   "it for a second one.");
+                    problems++;
+                }
+            }
+
+            // Everything below is in the skull part's space, taken from the prefab itself.
+            Vector3 origin = skullPart.localPosition;
+            Vector3 scale = skullPart.localScale;
+            System.Func<Vector3, Vector3> toPart = p => new Vector3(
+                (p.x - origin.x) / scale.x, (p.y - origin.y) / scale.y, (p.z - origin.z) / scale.z);
+
+            Mesh teethUpper = HeadLibrary.TeethUpper;
+            Mesh teethLower = HeadLibrary.TeethLower;
+
+            for (int v = 0; v < count; v++)
+            {
+                HeadLibrary.Head sculpt = HeadLibrary.Variant(v);
+                string tag = "variant " + v;
+
+                // --- inside the collider -------------------------------------------
+                float widest = 0f;
+                foreach (Vector3 vert in sculpt.Skull.vertices) widest = Mathf.Max(widest, vert.magnitude);
+                if (widest > 0.5f + 1e-3f)
+                {
+                    Debug.LogError($"[Heads] {tag} skull reaches {widest:0.0000}, outside the sphere it " +
+                                   "is drawn over — visible and not hittable.");
+                    problems++;
+                }
+
+                // --- UVs --------------------------------------------------------------
+                foreach (var (label, mesh) in new[] { ("skull", sculpt.Skull), ("jaw", sculpt.Jaw),
+                                                       ("wounds", sculpt.Gore), ("hair", sculpt.Hair) })
+                {
+                    if (mesh.uv == null || mesh.uv.Length != mesh.vertexCount)
+                    {
+                        Debug.LogError($"[Heads] {tag} {label} has no UVs; its texture would sample one texel.");
+                        problems++;
+                    }
+                }
+
+                // --- the face looks forward -------------------------------------------
+                Vector3 woundCentre = Vector3.zero;
+                foreach (Vector3 vert in sculpt.Gore.vertices) woundCentre += vert;
+                woundCentre /= Mathf.Max(1, sculpt.Gore.vertexCount);
+                if (woundCentre.z < 0.1f)
+                {
+                    Debug.LogError($"[Heads] {tag}'s wounds centre on z = {woundCentre.z:0.000}. The sockets, " +
+                                   "nose and mouth are at the front, so the face is on the back of the " +
+                                   "head — an axis flip between Blender and Unity.");
+                    problems++;
+                }
+
+                // --- one surface ------------------------------------------------------
+                int cracks = 0;
+                cracks += BorderMisses(sculpt.Gore, sculpt.Skull, sculpt.Jaw);
+                cracks += BorderMisses(sculpt.Jaw, sculpt.Skull, sculpt.Gore);
+                if (cracks > 0)
+                {
+                    Debug.LogError($"[Heads] {tag}: {cracks} border vertices of the jaw and wounds meet " +
+                                   "nothing. They were not cut from one surface, and it will crack.");
+                    problems++;
+                }
+
+                Mesh[] face = { sculpt.Skull, sculpt.Jaw, sculpt.Gore };
+
+                // --- the eyes sit in their sockets, and are visible ---------------------
+                float shallowest = float.MaxValue;
+                foreach (string suffix in new[] { "L", "R" })
+                {
+                    Transform eye = head.Find("EyeSocket" + suffix);
+                    Transform glint = head.Find("EyeGlint" + suffix);
+                    if (eye == null || glint == null)
+                    {
+                        Debug.LogError($"[Heads] Eye {suffix} is missing its parts.");
+                        problems++;
+                        continue;
+                    }
+
+                    Vector3 eyeFront = toPart(eye.localPosition + new Vector3(0f, 0f, eye.localScale.z * 0.5f));
+                    Vector3 glintFront = toPart(glint.localPosition + new Vector3(0f, 0f, glint.localScale.z * 0.5f));
+
+                    // Straight in from the front at the eye. The first surface met must be the
+                    // eye's own depth or deeper, or the eye is buried in the skull.
+                    float atEye = FirstSurfaceZ(face, eyeFront.x, eyeFront.y);
+                    if (atEye > eyeFront.z + 1e-3f)
+                    {
+                        Debug.LogError($"[Heads] {tag}: eye {suffix} is buried. From the front, skin at " +
+                                       $"z {atEye:0.000} sits in front of the eye at {eyeFront.z:0.000}.");
+                        problems++;
+                    }
+
+                    float atGlint = FirstSurfaceZ(face, glintFront.x, glintFront.y);
+                    if (atGlint > glintFront.z + 1e-3f)
+                    {
+                        Debug.LogError($"[Heads] {tag}: the catchlight in eye {suffix} is buried at " +
+                                       $"{glintFront.z:0.000} behind skin at {atGlint:0.000}.");
+                        problems++;
+                    }
+
+                    // How deep: the brow directly above the socket, against the eye's front. A
+                    // deep orbit is what holds the dark; a shallow one is a painted eye.
+                    float atBrow = FirstSurfaceZ(face, eyeFront.x, eyeFront.y + 0.10f);
+                    shallowest = Mathf.Min(shallowest, atBrow - eyeFront.z);
+                }
+
+                // 0.05 of skull-part z is about a centimetre in the head: less than that and
+                // the eye sits nearly flush with the face around it.
+                if (shallowest < 0.05f)
+                {
+                    Debug.LogError($"[Heads] {tag}: the brow stands only {shallowest:0.000} in front of the " +
+                                   "eye. The orbit is not deep enough to hold shadow.");
+                    problems++;
+                }
+
+                // --- the teeth are what you see in the mouth -------------------------
+                float upper = TeethShowing(teethUpper, face);
+                float lower = TeethShowing(teethLower, face);
+
+                Debug.Log($"[Heads] {tag}: skull {sculpt.Skull.triangles.Length / 3} tris, widest " +
+                          $"{widest:0.000}; wounds centred at z {woundCentre.z:0.00}; brow " +
+                          $"{shallowest:0.000} in front of the eye; teeth showing {upper:P0} upper, " +
+                          $"{lower:P0} lower.");
+
+                if (upper < 0.6f || lower < 0.5f)
+                {
+                    Debug.LogError($"[Heads] {tag}: from the front only {upper:P0} of the upper teeth and " +
+                                   $"{lower:P0} of the lower are the first thing a ray meets. The lip " +
+                                   "recesses have drifted off the arch and the rest are buried.");
+                    problems++;
+                }
+            }
+
+            // --- every walker wears one head, all four pieces of it -----------------------
+            var seen = new HashSet<int>();
+            for (int trial = 0; trial < 24; trial++)
+            {
+                UnityEngine.Random.InitState(9000 + trial);
+                var walker = Object.Instantiate(prefab);
+                try
+                {
+                    var appearance = walker.GetComponent<ZombieAppearance>();
+                    var walkerRig = walker.GetComponent<ZombieRig>();
+                    if (appearance == null || walkerRig == null) break;
+                    appearance.Initialise();
+
+                    Transform h = walkerRig.Bones.Head;
+                    int skullIndex = HeadLibrary.IndexOfSkull(h.Find("Skull").GetComponent<MeshFilter>().sharedMesh);
+                    HeadLibrary.Head expect = HeadLibrary.Variant(skullIndex);
+
+                    bool matched = skullIndex >= 0
+                        && h.Find("Jaw").GetComponent<MeshFilter>().sharedMesh == expect.Jaw
+                        && h.Find("FaceGore").GetComponent<MeshFilter>().sharedMesh == expect.Gore
+                        && h.Find("Hair").GetComponent<MeshFilter>().sharedMesh == expect.Hair;
+
+                    if (!matched)
+                    {
+                        Debug.LogError($"[Heads] A walker's skull, jaw, wounds and hair came from different " +
+                                       "heads. Its sockets float off its face.");
+                        problems++;
+                        break;
+                    }
+
+                    seen.Add(skullIndex);
+                }
+                finally
+                {
+                    Object.DestroyImmediate(walker);
+                }
+            }
+
+            if (count > 1 && seen.Count < 2)
+            {
+                Debug.LogError($"[Heads] 24 walkers all wore the same head. The variants exist and " +
+                               "nothing is choosing between them.");
+                problems++;
+            }
+
+            if (problems == 0)
+                Debug.Log($"[Heads] PASS — {count} sculpted heads, each one surface inside its collider and " +
+                          $"facing forward, with the eyes in their sockets and the teeth in front; " +
+                          $"24 walkers wore {seen.Count} different faces, every piece matched.");
+            else
+                Debug.LogError($"[Heads] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The z of the first surface a ray fired straight back from in front of the face meets
+        /// at (x, y), or negative infinity if it meets none.
+        /// </summary>
+        private static float FirstSurfaceZ(Mesh[] meshes, float x, float y)
+        {
+            float best = float.NegativeInfinity;
+            foreach (Mesh mesh in meshes)
+                best = Mathf.Max(best, MeshRayZ(mesh, x, y));
+            return best;
+        }
+
+        /// <summary>
+        /// The largest z at which a ray parallel to -z through (x, y) crosses the mesh. Every
+        /// sculpted mesh is in the same part space, so no transform is needed.
+        /// </summary>
+        private static float MeshRayZ(Mesh mesh, float x, float y)
+        {
+            Vector3[] v = mesh.vertices;
+            int[] t = mesh.triangles;
+            float best = float.NegativeInfinity;
+
+            for (int i = 0; i < t.Length; i += 3)
+            {
+                Vector3 a = v[t[i]], b = v[t[i + 1]], c = v[t[i + 2]];
+
+                // Barycentric test in the xy plane, then interpolate z.
+                float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
+                if (Mathf.Abs(d) < 1e-12f) continue;
+                float w1 = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / d;
+                float w2 = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / d;
+                float w3 = 1f - w1 - w2;
+                if (w1 < 0f || w2 < 0f || w3 < 0f) continue;
+
+                best = Mathf.Max(best, w1 * a.z + w2 * b.z + w3 * c.z);
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// What fraction of a tooth row is the first thing a ray from the front meets, sampled
+        /// at the front-most vertex in each of forty slices across the mouth.
+        /// </summary>
+        private static float TeethShowing(Mesh teeth, Mesh[] face)
+        {
+            Vector3[] verts = teeth.vertices;
+            if (verts.Length == 0) return 0f;
+
+            float minX = float.MaxValue, maxX = float.MinValue;
+            foreach (Vector3 vert in verts) { minX = Mathf.Min(minX, vert.x); maxX = Mathf.Max(maxX, vert.x); }
+
+            const int Slices = 40;
+            var front = new Vector3?[Slices];
+            foreach (Vector3 vert in verts)
+            {
+                int k = Mathf.Clamp((int)((vert.x - minX) / Mathf.Max(1e-6f, maxX - minX) * Slices), 0, Slices - 1);
+                if (front[k] == null || vert.z > front[k].Value.z) front[k] = vert;
+            }
+
+            int sampled = 0, showing = 0;
+            foreach (Vector3? f in front)
+            {
+                if (f == null) continue;
+                sampled++;
+                if (FirstSurfaceZ(face, f.Value.x, f.Value.y) <= f.Value.z + 2e-3f) showing++;
+            }
+
+            return sampled > 0 ? showing / (float)sampled : 0f;
+        }
+
+        /// <summary>
+        /// How many border vertices of `piece` fail to land on a vertex of either neighbour. A
+        /// border edge has only one triangle; on a surface cut into pieces, the other side of
+        /// that edge is in a neighbouring piece, at exactly the same vertices.
+        /// </summary>
+        private static int BorderMisses(Mesh piece, Mesh a, Mesh b)
+        {
+            var edges = new Dictionary<long, int>();
+            Vector3[] pv = piece.vertices;
+            int[] pt = piece.triangles;
+
+            // Vertices are deduplicated by position first: OBJ import splits a vertex wherever
+            // its UV or normal differs, so an index-based border would find borders everywhere.
+            var weld = new Dictionary<Vector3Int, int>();
+            var id = new int[pv.Length];
+            for (int i = 0; i < pv.Length; i++)
+            {
+                var key = Vector3Int.RoundToInt(pv[i] * 100000f);
+                if (!weld.TryGetValue(key, out int w)) { w = weld.Count; weld[key] = w; }
+                id[i] = w;
+            }
+
+            for (int i = 0; i < pt.Length; i += 3)
+            {
+                for (int e = 0; e < 3; e++)
+                {
+                    int p = id[pt[i + e]], q = id[pt[i + (e + 1) % 3]];
+                    long k = p < q ? ((long)p << 32) | (uint)q : ((long)q << 32) | (uint)p;
+                    edges[k] = edges.TryGetValue(k, out int n) ? n + 1 : 1;
+                }
+            }
+
+            var border = new HashSet<int>();
+            foreach (var pair in edges)
+            {
+                if (pair.Value != 1) continue;
+                border.Add((int)(pair.Key >> 32));
+                border.Add((int)(pair.Key & 0xffffffff));
+            }
+
+            var neighbours = new HashSet<Vector3Int>();
+            foreach (Vector3 vert in a.vertices) neighbours.Add(Vector3Int.RoundToInt(vert * 100000f));
+            foreach (Vector3 vert in b.vertices) neighbours.Add(Vector3Int.RoundToInt(vert * 100000f));
+
+            var positionOf = new Dictionary<int, Vector3>();
+            for (int i = 0; i < pv.Length; i++) positionOf[id[i]] = pv[i];
+
+            int misses = 0;
+            foreach (int w in border)
+                if (!neighbours.Contains(Vector3Int.RoundToInt(positionOf[w] * 100000f))) misses++;
+            return misses;
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
@@ -10533,6 +10961,12 @@ namespace ZombieHouse.EditorTools
             // The face. Assets, not just ProtoMaterials properties — third time this note
             // appears in this file and it has been earned every time.
             CreateMaterial("tooth", new Color(0.74f, 0.71f, 0.58f), 0.45f, 0f);
+
+            // The sculpted heads' wounds and dead eyes. Assets, for the reason written above
+            // every group in this method.
+            CreateTexturedMaterial("cavity", new Color(0.085f, 0.045f, 0.038f),
+                                   ProtoMaterials.SurfaceKind.Flesh, 1.5f, 0.45f, 0f);
+            CreateMaterial("deadeye", new Color(0.56f, 0.55f, 0.49f), 0.82f, 0f);
 
             Material eyeGlint = CreateMaterial("eyeglint", new Color(0.42f, 0.40f, 0.34f), 0.6f, 0f);
             ProtoMaterials.MakeEmissive(eyeGlint, new Color(0.9f, 0.86f, 0.72f));

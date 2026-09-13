@@ -1093,6 +1093,22 @@ The budget is the renderer's own number. `pixelLightCount` is 4; past the fourth
 a light to vertex and a demoted light casts nothing, so a fifth overlapping caster is work
 done and thrown away. `Test Shadows` holds every level to it.
 
+### The faces
+
+The walkers' heads are sculpted in Blender (`Tools_Props/zombiehead.py`), because almost
+everything frightening about a dead face is a *hole* — orbits, a nose rotted away, a mouth
+hanging open — and the procedural C# skull is a sphere nudged per direction, which can make a
+hollow but never a pocket. Each head is built as one solid, carved with booleans, voxel-remeshed
+into a clean surface, then cut into skull, jaw, wounds and hair.
+
+Four variants, each asymmetric — one torn cheek, a stove-in temple, a slumped orbit — so the
+horde is not one face stamped forty times. Dead eyes are milky and wet, deep in black sockets
+under a heavy brow; the teeth are an arch of differently-shaped incisors, canines and
+premolars, one missing, one snapped. The skull stays inside the headshot sphere by
+construction, so the sculpt changed what a zombie looks like and not what a headshot is.
+
+The procedural head is still there as a fallback, so the game plays without Blender.
+
 ### The feet
 
 The walk cycle is two sine waves and it assumes the world is flat. Everywhere this game is not
@@ -1705,6 +1721,7 @@ Almost everything is a serialized field, so you can tune in Play mode:
 | Feet through stairs / floating | `ZombieVisuals` → footPlacement, footFollowSpeed, maxHipDrop; re-run **Test Foot Placement** |
 | Walkers too smooth / plastic | `ProtoSkin` seeds in `ProtoMaterials.Seeds`, then delete `Resources/ProtoTextures` and rebuild |
 | Limbs the wrong shape | `BodyMesh.Build` → the taper, bulge and bulgeAt per part; re-run **Test Body Meshes** |
+| Faces too tame / too much | `Tools_Props/zombiehead.py` → `head_wounds`, `head_fields`, `VARIANTS`; preview with `-- --render --closeup`, then **Test Heads** |
 | Ferris wheel speed | `MerrylandGenerator.BuildFerrisWheel` → `ConfigureTurn` seconds (15); checked by **Test Merryland** |
 | Audio too loud / quiet | `GameAudio` → masterVolume, ambienceVolume |
 | A sound is wrong | `SoundBank` — every number in a recipe is audible; change and press Play |

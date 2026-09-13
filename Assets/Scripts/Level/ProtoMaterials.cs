@@ -330,6 +330,22 @@ namespace ZombieHouse.Level
         public static Material Hair =>
             GetTextured("hair", new Color(0.11f, 0.09f, 0.08f), SurfaceKind.Hair, 1.5f, 0.06f);
 
+        /// <summary>
+        /// The inside of a wound on something long dead: nearly black, a little wet.
+        ///
+        /// Not the red of the gore material. The sculpted heads' sockets, nasal hole and open
+        /// mouth were first previewed in gore red and read as eyeshadow on a flat face; a
+        /// wound that old is dark, and dark is what the eye reads as depth.
+        /// </summary>
+        public static Material Cavity =>
+            GetTextured("cavity", new Color(0.085f, 0.045f, 0.038f), SurfaceKind.Flesh, 1.5f, 0.45f);
+
+        /// <summary>
+        /// A dead eye: filmed over, pale, and glossy so it catches light on its own. A wet
+        /// highlight on a milky eye deep in a black socket is a stare; a painted pupil is not.
+        /// </summary>
+        public static Material DeadEye => Get("deadeye", new Color(0.56f, 0.55f, 0.49f), 0.82f);
+
         /// <summary>Old enamel. Yellowed, and shinier than anything else on the body.</summary>
         public static Material Tooth => Get("tooth", new Color(0.74f, 0.71f, 0.58f), 0.45f);
 

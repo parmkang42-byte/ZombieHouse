@@ -184,3 +184,4 @@ LightingData.asset     binary
 # this clone. The first person to run it would start silently converting these
 # to pointers, so the override is worth having before that happens.
 Assets/Resources/Props/*.obj    text eol=lf -filter -diff -merge
+Assets/Resources/Heads/*.obj    text eol=lf -filter -diff -merge

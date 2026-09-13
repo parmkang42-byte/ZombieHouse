@@ -39,6 +39,12 @@ namespace ZombieHouse.Enemies
         public float HeadTurnDegrees { get; private set; }
         public float ShoulderDroopDegrees { get; private set; }
 
+        /// <summary>
+        /// Which sculpted head this walker got, or -1 if it is not wearing one. Exposed so a
+        /// test can confirm the jaw, wounds and hair all came from the same head as the skull.
+        /// </summary>
+        public int HeadVariant { get; private set; } = -1;
+
         /// <summary>Per-zombie speed multiplier — some walkers are faster than others.</summary>
         public float PaceMultiplier { get; private set; } = 1f;
 
@@ -118,6 +124,9 @@ namespace ZombieHouse.Enemies
             LimpSeverity = Random.Range(limpSeverity.x, limpSeverity.y);
             LimpSide = Random.value < 0.5f ? -1 : 1;
 
+            // --- the face ----------------------------------------------------
+            ChooseHead(rig, authored);
+
             // --- colour ------------------------------------------------------
             _renderers = GetComponentsInChildren<Renderer>();
             _baseColours = new Color[_renderers.Length];
@@ -143,6 +152,57 @@ namespace ZombieHouse.Enemies
                 _baseColours[i] = colour;
                 ApplyColour(i, colour);
             }
+        }
+
+        /// <summary>
+        /// Puts a different sculpted head on each walker.
+        ///
+        /// Forty identical faces is one face and a crowd of copies, which is the very thing this
+        /// component exists to prevent -- and a face is the first place a copy shows. So each
+        /// walker draws a variant and all four of its meshes are swapped together.
+        ///
+        /// ALL FOUR, ALWAYS. Skull, jaw, wounds and hair are one surface cut into pieces, so a
+        /// skull from one variant with the wounds of another floats its sockets off its face.
+        /// Test Heads checks the four agree on every walker it builds.
+        ///
+        /// Only meshes are swapped. The colliders belong to the primitives the parts were made
+        /// from and never move, so which head a walker has cannot change where it can be hit.
+        /// A boss is authored, not rolled, and always wears the first.
+        /// </summary>
+        private void ChooseHead(ZombieRig rig, bool authored)
+        {
+            HeadVariant = -1;
+            if (rig == null || rig.Bones == null || rig.Bones.Head == null) return;
+            if (!HeadLibrary.Available) return;
+
+            Transform head = rig.Bones.Head;
+            MeshFilter skull = Filter(head, "Skull");
+
+            // Only a head that was built sculpted takes a sculpted variant. A creature with its
+            // own skull -- the jungle's, the bear's -- or a prefab built before Blender ran must
+            // not end up with a sculpted face hung over its own jaw.
+            if (skull == null || HeadLibrary.IndexOfSkull(skull.sharedMesh) < 0) return;
+
+            int index = authored ? 0 : Random.Range(0, HeadLibrary.Count);
+            HeadLibrary.Head chosen = HeadLibrary.Variant(index);
+
+            skull.sharedMesh = chosen.Skull;
+            SwapMesh(head, "Jaw", chosen.Jaw);
+            SwapMesh(head, "FaceGore", chosen.Gore);
+            SwapMesh(head, "Hair", chosen.Hair);
+            HeadVariant = index;
+        }
+
+        private static MeshFilter Filter(Transform parent, string name)
+        {
+            Transform part = parent.Find(name);
+            return part != null ? part.GetComponent<MeshFilter>() : null;
+        }
+
+        private static void SwapMesh(Transform parent, string name, Mesh mesh)
+        {
+            MeshFilter filter = Filter(parent, name);
+            if (filter != null && mesh != null) filter.sharedMesh = mesh;
         }
 
         /// <summary>

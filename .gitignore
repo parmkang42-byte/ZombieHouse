@@ -113,3 +113,6 @@ InitTestScene*.unity*
 # binary build artifact of a text file that is already committed.
 __pycache__/
 *.pyc
+
+# Blender preview renders from Tools_Props/zombiehead.py -- look at them, do not commit them.
+Tools_Props/_preview/

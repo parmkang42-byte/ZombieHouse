@@ -24,6 +24,44 @@ animated procedurally by `ZombieVisuals`. Blender is used as a *headless mesh co
 `.py` in `Tools_Props/` is the source, the `.obj` in `Assets/Resources/Props/` is a committed
 build artifact. Preserve this unless the user says they have assets to import.
 
+**The walkers' heads are sculpted in Blender** (`Tools_Props/zombiehead.py` ->
+`Assets/Resources/Heads/`), with the procedural `BodyMesh.Skull` head kept as the fallback when
+the meshes are absent (`HeadLibrary.Available`). The rules that make it work:
+
+- **One sculpt, cut into pieces.** Each variant is a single solid — cranium, face, jaw already
+  hanging open, cheeks joining them — cut afterwards into `ZombieHead<N>` (the skull), `...Jaw`,
+  `...Gore` and `...Hair`. The skull gets only faces with every vertex inside radius 0.5, so it
+  is inside the critical sphere *by construction*; the jaw gets the rest. Sculpting skull and
+  jaw separately left a seam down the side of the face every time, and the cheek flesh added to
+  hide it stood out like a thumb twice. Shared border vertices are what `Test Heads` checks.
+- **Every piece is in the Skull part's space** and every part wearing one takes the Skull
+  part's transform, unrotated. Nothing on the C# side positions the mouth.
+- **Soft anatomy is displacement fields, holes are booleans.** Brow, cheekbones and hollows
+  built from unions and boolean cuts came out with hard rims — a visor brow, a cheekbone ledge
+  like the edge of a mask. A boolean rim is right for a hole, where bone ends; wrong for flesh.
+- **Wounds are faces deeper than 4 mm inside the unwounded reference solid, *or* inside an
+  explicit dark zone** (mouth, nasal hole). Depth alone left the barely-cut back wall of the
+  mouth as pale skin, a ring round every throat.
+- **Never name a head part `Skull...`.** `ZombieRagdoll` and `ZombieDismemberment` find the head
+  by `StartsWith("Skull")`; the wounds part is `FaceGore` for that reason.
+- **The eyes are placed in C# and the orbits carved around them in Python** — two copies that
+  must agree. `Test Heads` reads the eye and teeth parts off the built prefab and raycasts the
+  imported meshes from in front: eye not buried, catchlight not buried, brow well in front of
+  the eye, 60%+ of each tooth row the first thing a ray meets.
+- **The Blender->Unity frame is `B(ux, uy, uz) = (ux, -uz, uy)`** with the props' export axes
+  (forward -Z, up Y), and the face lands on Unity +Z. Measured, by `Test Heads` checking the
+  wounds' centroid — the one check that catches a face imported onto the back of its head.
+- `ZombieAppearance.ChooseHead` swaps **all four meshes together** per walker, bosses always
+  variant 0. A skull from one variant with another's wounds floats its sockets off its face.
+- Heads import readable (`HeadImportSettings`) so the test can raycast what Unity imported,
+  after its handedness conversion. `Assets/Resources/Heads/*.obj` is LFS-exempt like the props.
+
+**Look at Blender output before it goes into the game.** Blender renders headlessly:
+`zombiehead.py -- --render [--closeup] [--front] [--only N]` writes to `Tools_Props/_preview/`
+(gitignored), using the game's own `.mat` colours and generated textures. Six rounds of
+renders took the head from a cartoon ghost to something frightening, and nearly every fix was
+invisible to every test — the preview is the only thing that sees them.
+
 **The face is geometry, not decals, and all of it is cosmetic.** `BodyMesh.Skull` carves the
 orbits 19% deeper than the brow above them, so the socket holds shadow whatever the light is
 doing — which only became worth doing once the level lights started casting. Eyes, catchlights
@@ -299,7 +337,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
@@ -416,6 +454,9 @@ tell you whether it exists.
   bevels every box. Running both tripled the staircase to 3,122 triangles against a 1,500
   budget.
 - **Decimation counts polygons; the exporter triangulates**, so Unity sees roughly double.
+- **`zombiehead.py` is not a prop.** It writes to `Resources/Heads`, normalises to the Skull
+  part rather than a unit box, and takes about 6 minutes for all four variants (voxel remesh
+  and exact booleans at 2.4 mm). Iterate with `--render --closeup --only N`, about a minute.
 
 ---
 
