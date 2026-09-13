@@ -450,6 +450,22 @@ bright; skip it and cloth renders at 62% — both uniform, both with nothing to 
 `CreateTexturedMaterial` guards on a bound albedo for exactly this reason, and `Test Skin`
 measures the decoded mean rather than trusting the arithmetic.
 
+**A normal map written to .png must be plain RGB = xyz, alpha 1.** `ProtoSkin` once packed
+DXT5nm directly (x in alpha, red and blue pinned at 255) because that is what the shader
+unpacks at runtime — and then the editor wrote those same bytes to disk for the NormalMap
+importer, which reads RGB and ignores alpha. Every textured body in the game was lit as though
+its surface tilted **45 degrees** sideways, for a week, while `Test Skin` confirmed the map was
+bound and the keyword on. Plain RGB is right on both paths because Unity's
+`UnpackScaleNormalRGorAG` multiplies red by alpha first, and with alpha at 1 that is a no-op.
+`Test Skin` now decodes the .png the way the importer does and fails past 5 degrees of tilt.
+
+**Committed generated assets are re-checked against their generator every build.**
+`LoadOrWriteTexture` regenerates each map, compares *pixels* (not bytes — the PNG encoder is
+not promised deterministic) with the file on disk, and rewrites only on a difference. It used
+to run only when the file was missing, and sat behind a guard that returned early for any
+material already textured — so a fixed generator could never reach a committed map, which is
+how the bad normal maps outlived the understanding that they were bad.
+
 **Keep every noise octave inside the sampling rate.** `ProtoSkin`'s finest octave must stay
 at two or more pixels per lattice cell (at 256 px, a base period of 32 over three octaves).
 Hair originally used 64, which put its third octave at one cell per pixel — white noise, and

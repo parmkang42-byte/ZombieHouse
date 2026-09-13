@@ -251,11 +251,23 @@ namespace ZombieHouse.Fx
         /// <summary>
         /// Turns a height field into a normal map by central differences.
         ///
-        /// The result is written in DXT5nm layout — x in alpha, y in green, red and
-        /// blue filled — which is what Unity's UnpackNormal expects on desktop. When
-        /// these are saved as .png assets the importer is told they are normal maps and
-        /// does its own encoding; this path is for the runtime fallback, where no
-        /// importer has run and the bytes have to already be right.
+        /// Written as an ordinary tangent-space map — x, y and z in red, green and blue,
+        /// alpha solid — because that is the one layout that is right on BOTH paths these
+        /// bytes take, and the previous layout was right on only one of them.
+        ///
+        /// THE BUG THIS REPLACES. It used to pack DXT5nm directly: x in alpha, y in green,
+        /// red and blue filled with 255. That is what the shader unpacks at runtime, so
+        /// the in-memory fallback lit correctly. But the editor writes these same bytes to
+        /// .png and hands them to the importer as a NormalMap, and the importer reads RGB
+        /// as the normal and never looks at alpha. With red and blue pinned at 255 every
+        /// pixel decoded as roughly (0.7, 0, 0.7): every textured body in the game was lit
+        /// as though its entire surface were tipped forty-five degrees sideways. Test Skin
+        /// checked that the map was bound and the keyword was on, which it was.
+        ///
+        /// Why this layout survives both. Unity's UnpackScaleNormalRGorAG multiplies red
+        /// by alpha before decoding — the trick that lets one function read both BC5 and
+        /// DXT5nm. With alpha at 1 that multiply changes nothing, so a plain RGB map
+        /// unpacks correctly in memory, and the importer reads exactly the xyz it expects.
         /// </summary>
         private static Texture2D NormalFrom(float[] height, int size, float strength)
         {
@@ -278,8 +290,9 @@ namespace ZombieHouse.Fx
 
                     byte nx = (byte)Mathf.Clamp(Mathf.RoundToInt((n.x * 0.5f + 0.5f) * 255f), 0, 255);
                     byte ny = (byte)Mathf.Clamp(Mathf.RoundToInt((n.y * 0.5f + 0.5f) * 255f), 0, 255);
+                    byte nz = (byte)Mathf.Clamp(Mathf.RoundToInt((n.z * 0.5f + 0.5f) * 255f), 0, 255);
 
-                    pixels[y * size + x] = new Color32(255, ny, 255, nx);
+                    pixels[y * size + x] = new Color32(nx, ny, nz, 255);
                 }
             }
 

@@ -9260,6 +9260,63 @@ namespace ZombieHouse.EditorTools
                           $"wrap step {wrapStep:0.0000} vs {interiorStep:0.0000} interior.");
             }
 
+            // --- the normal maps point out of the surface ------------------------
+            // Read the .png the importer actually consumes, and decode it the way the
+            // importer does: RGB as xyz, alpha ignored. The average normal of a bumpy but
+            // unbiased surface faces straight out of it, so x and y must average near
+            // zero and z must dominate.
+            //
+            // This is the check that was missing. The maps were packed for the shader's
+            // runtime unpack — x in alpha, red and blue pinned at 255 — and written to disk
+            // unchanged, so the importer decoded every pixel as about (0.7, 0, 0.7). Every
+            // body in the game was lit as though its surface tilted forty-five degrees
+            // sideways, while this test confirmed the map was bound and the keyword on.
+            foreach (ProtoMaterials.SurfaceKind kind in kinds)
+            {
+                string pngPath = TexturesFolder + "/" + kind.ToString().ToLowerInvariant() + "_normal.png";
+                if (!File.Exists(pngPath)) continue;
+
+                var decoded = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+                try
+                {
+                    if (!decoded.LoadImage(File.ReadAllBytes(pngPath)))
+                    {
+                        Debug.LogError($"[Skin] Could not read {pngPath}.");
+                        problems++;
+                        continue;
+                    }
+
+                    Color[] texels = decoded.GetPixels();
+                    double sx = 0d, sy = 0d, sz = 0d;
+                    foreach (Color t in texels)
+                    {
+                        var n = new Vector3(t.r * 2f - 1f, t.g * 2f - 1f, t.b * 2f - 1f).normalized;
+                        sx += n.x;
+                        sy += n.y;
+                        sz += n.z;
+                    }
+
+                    var mean = new Vector3((float)(sx / texels.Length), (float)(sy / texels.Length),
+                                           (float)(sz / texels.Length));
+                    float tilt = Mathf.Atan2(new Vector2(mean.x, mean.y).magnitude, mean.z) * Mathf.Rad2Deg;
+
+                    Debug.Log($"[Skin] {kind} normal map decodes to mean ({mean.x:0.000}, " +
+                              $"{mean.y:0.000}, {mean.z:0.000}) — tilted {tilt:0.0} deg.");
+
+                    if (tilt > 5f)
+                    {
+                        Debug.LogError($"[Skin] {kind}'s normal map, decoded as the importer reads " +
+                                       $"it, leans {tilt:0.0} degrees off the surface. Every body " +
+                                       "wearing it is lit as though it faces somewhere it does not.");
+                        problems++;
+                    }
+                }
+                finally
+                {
+                    Object.DestroyImmediate(decoded);
+                }
+            }
+
             // --- the assets are wired ----------------------------------------
             // In memory is not the question. These are read back off disk, because a
             // material is correct in memory at the moment it is built and that is exactly
@@ -10526,12 +10583,22 @@ namespace ZombieHouse.EditorTools
             // encoding factor, which is only the right thing to do to a colour that has not
             // already had it done — twice over and the material renders about 40% too
             // bright. A bound albedo is the evidence that it has been through here before.
+            //
+            // The maps are brought up to date FIRST, before that guard can return. This
+            // guard used to gate the texture writer too, which meant a material that had
+            // ever been textured could never receive a changed map: the generator was
+            // fixed, the committed .png was not, and nothing anywhere noticed. That is how
+            // a normal map packed for the wrong reader stayed in the game after the code
+            // that wrote it was understood to be wrong.
+            Texture2D albedo = LoadOrWriteTexture(kind, false);
+            Texture2D normal = LoadOrWriteTexture(kind, true);
+
             if (material.mainTexture != null) return material;
 
             var surface = new ZombieHouse.Fx.ProtoSkin.Surface
             {
-                Albedo = LoadOrWriteTexture(kind, false),
-                Normal = LoadOrWriteTexture(kind, true),
+                Albedo = albedo,
+                Normal = normal,
                 Headroom = ProtoMaterials.SurfaceFor(kind).Headroom
             };
 
@@ -10552,11 +10619,20 @@ namespace ZombieHouse.EditorTools
             string name = kind.ToString().ToLowerInvariant() + (normal ? "_normal" : "_albedo");
             string path = TexturesFolder + "/" + name + ".png";
 
-            var loaded = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-            if (loaded != null) return loaded;
-
             var surface = ProtoMaterials.SurfaceFor(kind);
             Texture2D source = normal ? surface.Normal : surface.Albedo;
+
+            // The generator is the source of truth and the .png is a committed copy of it,
+            // so the copy is checked against the generator on every build rather than
+            // trusted for having once been written. Pixels are compared, not file bytes:
+            // nothing guarantees the PNG encoder is byte-for-byte deterministic, and a
+            // writer that rewrote the file whenever the encoder wobbled would churn four
+            // binaries in git on every build for no change at all.
+            var loaded = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (loaded != null && SamePixels(path, source)) return loaded;
+
+            if (loaded != null)
+                Debug.Log($"[ZombieHouse] {name}.png no longer matches its generator; rewriting it.");
 
             System.IO.File.WriteAllBytes(path, source.EncodeToPNG());
             AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
@@ -10579,6 +10655,33 @@ namespace ZombieHouse.EditorTools
             }
 
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        /// <summary>Whether the image on disk holds exactly the texels of `source`.</summary>
+        private static bool SamePixels(string path, Texture2D source)
+        {
+            if (!File.Exists(path)) return false;
+
+            var onDisk = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+            try
+            {
+                if (!onDisk.LoadImage(File.ReadAllBytes(path))) return false;
+                if (onDisk.width != source.width || onDisk.height != source.height) return false;
+
+                Color32[] a = onDisk.GetPixels32();
+                Color32[] b = source.GetPixels32();
+                if (a.Length != b.Length) return false;
+
+                for (int i = 0; i < a.Length; i++)
+                    if (a[i].r != b[i].r || a[i].g != b[i].g || a[i].b != b[i].b || a[i].a != b[i].a)
+                        return false;
+
+                return true;
+            }
+            finally
+            {
+                Object.DestroyImmediate(onDisk);
+            }
         }
 
         private static Material CreateMaterial(string key, Color color, float smoothness, float metallic)
