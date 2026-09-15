@@ -1722,6 +1722,7 @@ Almost everything is a serialized field, so you can tune in Play mode:
 | Walkers too smooth / plastic | `ProtoSkin` seeds in `ProtoMaterials.Seeds`, then delete `Resources/ProtoTextures` and rebuild |
 | Limbs the wrong shape | `BodyMesh.Build` → the taper, bulge and bulgeAt per part; re-run **Test Body Meshes** |
 | Faces too tame / too much | `Tools_Props/zombiehead.py` → `head_wounds`, `head_fields`, `VARIANTS`; preview with `-- --render --closeup`, then **Test Heads** |
+| Scope too steady / too shaky | `Weapon` → Scope Sway → breathDegrees (0.34), tremorDegrees (0.07); re-run **Test Scope Sway** |
 | Ferris wheel speed | `MerrylandGenerator.BuildFerrisWheel` → `ConfigureTurn` seconds (15); checked by **Test Merryland** |
 | Audio too loud / quiet | `GameAudio` → masterVolume, ambienceVolume |
 | A sound is wrong | `SoundBank` — every number in a recipe is audible; change and press Play |

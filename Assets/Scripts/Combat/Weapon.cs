@@ -90,6 +90,9 @@ namespace ZombieHouse.Combat
         [Header("References")]
         [SerializeField] private Camera viewCamera;
         [SerializeField] private MouseLook mouseLook;
+
+        [Tooltip("The drift of a scope held by hand. Only a scoped weapon ever uses it.")]
+        [SerializeField] private ScopeSway scopeSway = new ScopeSway();
         [SerializeField] private PlayerController playerController;
         [SerializeField] private Transform muzzle;
         [SerializeField] private Light muzzleFlash;
@@ -183,6 +186,7 @@ namespace ZombieHouse.Combat
 
             IsAiming = InputReader.AimHeld && !IsReloading;
             CurrentSpread = ComputeSpread();
+            TickSway(Time.deltaTime, IsScoped);
 
             if (viewCamera != null)
             {
@@ -450,6 +454,26 @@ namespace ZombieHouse.Combat
         {
             // Put it away mid-burst and the muzzle settles while it is on your back.
             if (recoil != null) recoil.Reset();
+
+            // And put it away mid-breath without leaving the view tilted. Only the drawn weapon
+            // updates, so a holstered rifle would otherwise leave its last sway on the camera.
+            if (scopeSway != null) scopeSway.Reset();
+            if (mouseLook != null) mouseLook.SwayDegrees = Vector2.zero;
+        }
+
+        /// <summary>The sway currently on the view, in degrees (x pitch, y yaw).</summary>
+        public Vector2 SwayDegrees => scopeSway != null ? scopeSway.Offset : Vector2.zero;
+
+        /// <summary>
+        /// Advances the scope's drift and hands it to the camera. Public, and taking whether it
+        /// is scoped as an argument, so a test can drive it without anyone holding a trigger.
+        /// A weapon without a scope never sways, however it is asked.
+        /// </summary>
+        public void TickSway(float deltaTime, bool scopedNow)
+        {
+            if (scopeSway == null) return;
+            Vector2 sway = scopeSway.Tick(deltaTime, scoped && scopedNow);
+            if (mouseLook != null) mouseLook.SwayDegrees = sway;
         }
 
         public void TickReload(float deltaTime)

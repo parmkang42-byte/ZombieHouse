@@ -10710,6 +10710,150 @@ namespace ZombieHouse.EditorTools
             return misses;
         }
 
+        /// <summary>
+        /// A scope held by hand drifts, and the drift is slight, smooth, centred and gone the
+        /// moment the scope comes down.
+        ///
+        /// Measured on the camera, not on the sway numbers: a rifle and a MouseLook are put
+        /// together and ticked frame by frame, and the camera's forward vector is compared with
+        /// where it was aimed. Shots leave along that vector, so that is the drift a bullet has.
+        ///
+        /// BOTH ENDS. Too little and the scope is still a laser; too much and a long shot is a
+        /// lottery. The band is a zombie's head-width at thirty metres, roughly.
+        ///
+        /// SMOOTH. The largest change between two frames is bounded, because a view that jumps
+        /// a little every frame reads as the game stuttering rather than as a hand shaking.
+        ///
+        /// CENTRED. Over many breaths the aim must average back to where it was put; a sway with
+        /// a bias is not harder, it is wrong.
+        /// </summary>
+        [MenuItem("Zombie House/Test Scope Sway", false, 59)]
+        public static void TestScopeSway()
+        {
+            const float Dt = 1f / 60f;
+            int problems = 0;
+
+            var body = new GameObject("SwayBody");
+            var eye = new GameObject("SwayCamera");
+            eye.transform.SetParent(body.transform, false);
+            var gunObject = new GameObject("SwayRifle");
+            gunObject.transform.SetParent(eye.transform, false);
+
+            try
+            {
+                var look = eye.AddComponent<MouseLook>();
+                var lookSo = new SerializedObject(look);
+                lookSo.FindProperty("body").objectReferenceValue = body.transform;
+                lookSo.FindProperty("cameraTransform").objectReferenceValue = eye.transform;
+                lookSo.ApplyModifiedPropertiesWithoutUndo();
+
+                var rifle = gunObject.AddComponent<Weapon>();
+                var rifleSo = new SerializedObject(rifle);
+                rifleSo.FindProperty("scoped").boolValue = true;
+                rifleSo.FindProperty("mouseLook").objectReferenceValue = look;
+                rifleSo.ApplyModifiedPropertiesWithoutUndo();
+
+                look.Tick(Dt);
+                Vector3 aimed = eye.transform.forward;
+
+                // --- scoped: how far, how smooth, how centred ------------------------
+                float peak = 0f, worstStep = 0f;
+                Vector2 previous = Vector2.zero;
+                Vector2 sum = Vector2.zero;
+                int counted = 0;
+
+                for (int i = 0; i < 36 * 60; i++)
+                {
+                    rifle.TickSway(Dt, true);
+                    look.Tick(Dt);
+
+                    float angle = Vector3.Angle(aimed, eye.transform.forward);
+                    peak = Mathf.Max(peak, angle);
+
+                    Vector2 sway = rifle.SwayDegrees;
+                    worstStep = Mathf.Max(worstStep, (sway - previous).magnitude);
+                    previous = sway;
+
+                    // The first second is the sway easing in, and belongs to neither the peak
+                    // band nor the bias.
+                    if (i >= 60) { sum += sway; counted++; }
+                }
+
+                Vector2 mean = counted > 0 ? sum / counted : Vector2.zero;
+
+                // --- lowered: back to exactly where it was aimed ----------------------
+                for (int i = 0; i < 2 * 60; i++)
+                {
+                    rifle.TickSway(Dt, false);
+                    look.Tick(Dt);
+                }
+                float afterLowering = Vector3.Angle(aimed, eye.transform.forward);
+
+                Debug.Log($"[Sway] peak {peak:0.000} deg, largest frame-to-frame step {worstStep:0.0000} deg, " +
+                          $"mean ({mean.x:0.0000}, {mean.y:0.0000}) deg, {afterLowering:0.0000} deg off " +
+                          "aim after lowering the scope.");
+
+                if (peak < 0.2f)
+                {
+                    Debug.LogError($"[Sway] The scoped view drifts at most {peak:0.000} degrees. That is still " +
+                                   "a laser, and a long headshot is as easy as a short one.");
+                    problems++;
+                }
+                if (peak > 0.9f)
+                {
+                    Debug.LogError($"[Sway] The scoped view swings {peak:0.000} degrees. That is not a steady " +
+                                   "hand having trouble, it is a scope nobody can use.");
+                    problems++;
+                }
+                if (worstStep > 0.05f)
+                {
+                    Debug.LogError($"[Sway] The view jumps {worstStep:0.0000} degrees between two frames. A hand " +
+                                   "drifts; a jump every frame reads as the game stuttering.");
+                    problems++;
+                }
+                if (Mathf.Abs(mean.x) > 0.05f || Mathf.Abs(mean.y) > 0.05f)
+                {
+                    Debug.LogError($"[Sway] Over 35 seconds the aim averages ({mean.x:0.000}, {mean.y:0.000}) " +
+                                   "degrees off where it was put. A sway with a bias pulls every shot one way.");
+                    problems++;
+                }
+                if (afterLowering > 0.01f)
+                {
+                    Debug.LogError($"[Sway] With the scope lowered the view is still {afterLowering:0.0000} " +
+                                   "degrees off aim. The sway leaked into the aim itself.");
+                    problems++;
+                }
+
+                // --- a weapon with no scope never sways, whatever it is told ------------
+                rifleSo.Update();
+                rifleSo.FindProperty("scoped").boolValue = false;
+                rifleSo.ApplyModifiedPropertiesWithoutUndo();
+                float unscopedPeak = 0f;
+                for (int i = 0; i < 5 * 60; i++)
+                {
+                    rifle.TickSway(Dt, true);
+                    look.Tick(Dt);
+                    unscopedPeak = Mathf.Max(unscopedPeak, Vector3.Angle(aimed, eye.transform.forward));
+                }
+                if (unscopedPeak > 0.001f)
+                {
+                    Debug.LogError($"[Sway] A weapon with no scope drifted {unscopedPeak:0.000} degrees while " +
+                                   "aiming. Only a scope sways.");
+                    problems++;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(body);
+            }
+
+            if (problems == 0)
+                Debug.Log("[Sway] PASS — the scope drifts slightly and smoothly, averages back onto the aim, " +
+                          "and lets go the moment it is lowered.");
+            else
+                Debug.LogError($"[Sway] FAIL — {problems} problem(s).");
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);

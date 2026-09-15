@@ -45,6 +45,15 @@ namespace ZombieHouse.Player
         /// </summary>
         public float SensitivityMultiplier { get; set; } = 1f;
 
+        /// <summary>
+        /// Degrees added to the camera on top of the aim -- x pitch, y yaw -- by whatever is
+        /// making the view drift, which today is a scope held by hand. Added to what is drawn,
+        /// never to _pitch or _yaw, so it cannot build up into a drift of the aim itself, and
+        /// clearing it puts the view back exactly where the player was pointing. Shots leave
+        /// along the camera, so they follow the sway the player sees.
+        /// </summary>
+        public Vector2 SwayDegrees { get; set; }
+
         private void Awake()
         {
             if (body == null) body = transform.parent != null ? transform.parent : transform;
@@ -56,6 +65,18 @@ namespace ZombieHouse.Player
 
         private void LateUpdate()
         {
+            Tick(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// One frame of look. Public so a test can compose the camera without play mode, which
+        /// is the only way to check that a sway actually reaches the view.
+        /// </summary>
+        public void Tick(float deltaTime)
+        {
+            if (body == null) body = transform.parent != null ? transform.parent : transform;
+            if (cameraTransform == null) cameraTransform = transform;
+
             if (GameManager.GameplayActive)
             {
                 Vector2 look = InputReader.Look * (sensitivity * SensitivityMultiplier);
@@ -65,11 +86,12 @@ namespace ZombieHouse.Player
             }
 
             // Recoil eases in fast and recovers slowly.
-            _recoilTarget = Vector2.Lerp(_recoilTarget, Vector2.zero, recoilRecoverySpeed * Time.deltaTime);
-            _recoilCurrent = Vector2.Lerp(_recoilCurrent, _recoilTarget, recoilSnappiness * Time.deltaTime);
+            _recoilTarget = Vector2.Lerp(_recoilTarget, Vector2.zero, recoilRecoverySpeed * deltaTime);
+            _recoilCurrent = Vector2.Lerp(_recoilCurrent, _recoilTarget, recoilSnappiness * deltaTime);
 
             body.rotation = Quaternion.Euler(0f, _yaw + _recoilCurrent.y, 0f);
-            cameraTransform.localRotation = Quaternion.Euler(_pitch - _recoilCurrent.x, 0f, 0f);
+            cameraTransform.localRotation = Quaternion.Euler(_pitch - _recoilCurrent.x + SwayDegrees.x,
+                                                            SwayDegrees.y, 0f);
         }
 
         /// <summary>
