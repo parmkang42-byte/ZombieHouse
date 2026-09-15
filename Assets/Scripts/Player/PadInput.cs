@@ -319,11 +319,19 @@ namespace ZombieHouse.Player
         public static bool FirePressed { get { Poll(); return _fireIs && !_fireWas; } }
         public static bool AimHeld { get { Poll(); return _aimIs; } }
 
-        /// <summary>Right bumper: the katana. Left bumper: the rifle.</summary>
-        public static bool MeleePressed => RightShoulderDown;
-        public static bool MeleeHeld => RightShoulderHeld;
-        public static bool RifleFirePressed => LeftShoulderDown;
-        public static bool RifleFireHeld => LeftShoulderHeld;
+        /// <summary>
+        /// Left bumper: the katana. Right bumper: the rifle.
+        ///
+        /// These were the other way round, and the katana moved to LB at the player's
+        /// request. It is the right side for it: the blade is the panic button for a walker
+        /// that is already on you, and on the left hand it can be hit without the right thumb
+        /// leaving the look stick -- which is the one thing you must not stop doing when
+        /// something is inside arm's reach. The rifle is still on D-pad up as well.
+        /// </summary>
+        public static bool MeleePressed => LeftShoulderDown;
+        public static bool MeleeHeld => LeftShoulderHeld;
+        public static bool RifleFirePressed => RightShoulderDown;
+        public static bool RifleFireHeld => RightShoulderHeld;
 
         public static bool JumpPressed => South;
         public static bool InteractPressed => West;

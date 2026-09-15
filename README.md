@@ -528,8 +528,8 @@ down mid-fight and reach for the mouse without touching a menu.
 | Right stick | Look |
 | Right trigger | Fire |
 | Left trigger | Aim down sights |
-| Right bumper | Swing katana |
-| Left bumper | Rifle |
+| Left bumper | Swing katana |
+| Right bumper | Rifle |
 | A | Jump |
 | X | Act — lift the cell, fit it, cut a hostage loose |
 | Y | Reload |
