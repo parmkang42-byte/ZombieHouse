@@ -27,6 +27,15 @@ All eight are built by the same machinery. `ILevelSource` is the seam: a level a
 player starts, where the exit is, where pickups go and where zombies can lurk. `LevelDirector`,
 `ZombieSpawner` and the NavMesh baker work on either without knowing which they are in.
 
+### Level 1 — the broadcast
+
+The house opens on a television left running in the room you wake up in, on a cabinet across
+from where you stand: a LIVE feed from the county hospital breaking up into static, BREAKING
+NEWS, *THE DEAD ARE WALKING — STAY INDOORS*, and a ticker that loops the rest — bites confirmed
+as the source, hospitals overwhelmed, evacuation at dawn, *if someone you love has been bitten,
+do not let them in*. It is the explanation for everything that follows, and it arrives before
+the first walker does without stopping the game to tell it.
+
 ### Level 2 — the forest
 
 A seeded wood inside a ring of cliffs. You start in a clearing at one edge and have to cross

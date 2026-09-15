@@ -349,7 +349,11 @@ database and it comes back with ~69 phantom `UnityEngine.UI does not exist` erro
 `HudController` that no code change fixes. Stage a whole new directory, or mirror over the
 existing `Assets` without deleting first. Reusing a stale `Library/` causes the same thing.
 
-Pixel and GPU tests need `-batchmode` **without** `-nographics`.
+Pixel and GPU tests need `-batchmode` **without** `-nographics`. That works for looking,
+too: a throwaway editor script that places a camera, renders to a `RenderTexture` and writes a
+PNG gives a real in-engine screenshot. The first capture of the Breaking News set showed its
+LIVE badge printed over its own caption, which nothing measurable would ever have caught. Keep
+the capture script in the stage; exposure between two such renders is still not comparable.
 
 ### Methods worth knowing
 
@@ -360,7 +364,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`, `TestLoading`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`, `TestLoading`, `TestBreakingNews`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---
@@ -454,7 +458,11 @@ comm -23 <(grep -ohE "guid: [a-f0-9]{32}" Assets/Scenes/*.unity | cut -d' ' -f2 
          <(grep -rhoE "guid: [a-f0-9]{32}" --include=*.meta Assets/ | cut -d' ' -f2 | sort -u)
 ```
 
-Anything but Unity's two built-in sentinels (`0000…e000…`, `0000…f000…`) is dangling.
+Anything but Unity's two built-in sentinels (`0000…e000…`, `0000…f000…`) is dangling — **except
+uGUI package scripts**, whose `.meta` files live in `Library/PackageCache`, not `Assets/`. Level 1
+carries a world-space canvas (the Breaking News set), so five GUIDs now show up there that
+resolve to `com.unity.ugui` (`Image`, `Text`, `RawImage`, `RectMask2D`, `CanvasScaler`). Check an
+unexplained GUID with `grep -rl "guid: <id>" <stage>/Library/PackageCache --include=*.meta`.
 
 ---
 

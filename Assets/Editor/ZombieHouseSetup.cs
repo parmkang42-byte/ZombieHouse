@@ -11016,6 +11016,159 @@ namespace ZombieHouse.EditorTools
                 Debug.LogError($"[Loading] FAIL — {problems} problem(s).");
         }
 
+        /// <summary>
+        /// The emergency broadcast is on, it is the first thing the player can see, and it
+        /// changes nothing about where anything can walk.
+        ///
+        /// VISIBLE FROM WHERE YOU START. A television built facing the wall, or behind a
+        /// cabinet, or in the wrong room, is still "a television in the level" and passes any
+        /// check that it exists. So this stands at the player's start at eye height and asks
+        /// the two things that matter: is there a clear line to the screen, and is the screen
+        /// turned toward you.
+        ///
+        /// STANDING ON SOMETHING. A ray straight down from under the set must land on the
+        /// cabinet's top, not the floor a metre below it.
+        ///
+        /// COSMETIC. No collider anywhere in it: the NavMesh bakes from colliders, and the
+        /// house's navigation counts are the canary (Verify Level checks them). Its glow must not
+        /// cast either -- a shadow-casting point light is six shadow maps for a flicker.
+        ///
+        /// ALIVE. The ticker has to actually scroll, and keep scrolling forever without running
+        /// off to somewhere it never comes back from.
+        /// </summary>
+        [MenuItem("Zombie House/Test Breaking News", false, 61)]
+        public static void TestBreakingNews()
+        {
+            int problems = 0;
+
+            ILevelSource source = OpenLevel(ScenePath, "House");
+            var house = source as HouseGenerator;
+            if (house == null)
+            {
+                Debug.LogError("[News] Level 1 has no HouseGenerator.");
+                return;
+            }
+
+            BreakingNewsTV[] sets = Object.FindObjectsByType<BreakingNewsTV>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (sets.Length != 1)
+            {
+                Debug.LogError($"[News] The house has {sets.Length} televisions running the broadcast, not one.");
+                return;
+            }
+
+            BreakingNewsTV tv = sets[0];
+            Transform root = tv.transform;
+
+            // --- cosmetic -----------------------------------------------------------------
+            Collider[] colliders = root.GetComponentsInChildren<Collider>(true);
+            if (colliders.Length > 0)
+            {
+                Debug.LogError($"[News] The television carries {colliders.Length} collider(s), starting with " +
+                               $"'{colliders[0].name}'. It would bake into the NavMesh.");
+                problems++;
+            }
+
+            if (tv.Glow == null || tv.Glow.shadows != LightShadows.None)
+            {
+                Debug.LogError("[News] The screen glow is missing or casts shadows. It is set dressing, not a room light.");
+                problems++;
+            }
+
+            Physics.SyncTransforms();
+
+            // --- standing on the cabinet ------------------------------------------------------
+            RaycastHit below;
+            bool standing = Physics.Raycast(root.position + Vector3.up * 0.05f, Vector3.down, out below, 0.25f,
+                                            ~0, QueryTriggerInteraction.Ignore);
+            if (!standing || !below.collider.name.StartsWith("Cabinet"))
+            {
+                Debug.LogError($"[News] Under the television is {(standing ? "'" + below.collider.name + "'" : "nothing within 25 cm")}, " +
+                               "not the cabinet it is meant to stand on.");
+                problems++;
+            }
+
+            // --- seen from where the player starts --------------------------------------------
+            Vector3 eye = house.PlayerSpawn + Vector3.up * 1.6f;
+            Vector3 screenCentre = root.TransformPoint(new Vector3(0f, 0.35f, 0.03f));
+            Vector3 toEye = eye - screenCentre;
+            float distance = toEye.magnitude;
+            float facing = Vector3.Dot(root.forward, toEye.normalized);
+
+            // Stop just short of the screen so the ray cannot count the set's own surroundings
+            // at the very end; nothing on the set has a collider anyway.
+            bool blocked = Physics.Linecast(eye, screenCentre + toEye.normalized * 0.12f, out RaycastHit blocker,
+                                            ~0, QueryTriggerInteraction.Ignore);
+
+            Debug.Log($"[News] television {distance:0.0} m from the player's start, facing {Mathf.Acos(Mathf.Clamp(facing, -1f, 1f)) * Mathf.Rad2Deg:0} deg " +
+                      $"off them, line of sight {(blocked ? "blocked by " + blocker.collider.name : "clear")}.");
+
+            if (distance > 12f)
+            {
+                Debug.LogError($"[News] The television is {distance:0.0} m from where the player starts. It is meant to be " +
+                               "the first thing in view, not something found later.");
+                problems++;
+            }
+            if (facing < 0.5f)
+            {
+                Debug.LogError("[News] The screen is turned more than sixty degrees away from where the player starts. " +
+                               "A broadcast shown to the wall is no broadcast.");
+                problems++;
+            }
+            if (blocked)
+            {
+                Debug.LogError($"[News] From the player's start, '{blocker.collider.name}' is in the way of the screen.");
+                problems++;
+            }
+
+            // --- what it says -----------------------------------------------------------------
+            var words = root.GetComponentsInChildren<UnityEngine.UI.Text>(true).Select(t => t.text).ToList();
+            if (!words.Contains("BREAKING NEWS"))
+            {
+                Debug.LogError("[News] Nothing on the screen says BREAKING NEWS.");
+                problems++;
+            }
+            if (!words.Any(w => w.Contains("DEAD") && w.Contains("INDOORS")))
+            {
+                Debug.LogError("[News] The headline does not tell the player what is happening or what to do.");
+                problems++;
+            }
+            if (!words.Any(w => w.Contains("OUTBREAK")))
+            {
+                Debug.LogError("[News] The ticker never mentions the outbreak.");
+                problems++;
+            }
+
+            // --- alive ------------------------------------------------------------------------------
+            float start = tv.TickerOffset;
+            tv.Tick(1f);
+            float afterASecond = tv.TickerOffset;
+            if (afterASecond >= start)
+            {
+                Debug.LogError($"[News] The ticker did not move in a second ({start:0} -> {afterASecond:0}).");
+                problems++;
+            }
+
+            float lowest = float.MaxValue, highest = float.MinValue;
+            for (int i = 0; i < 20000; i++)
+            {
+                tv.Tick(0.05f);
+                lowest = Mathf.Min(lowest, tv.TickerOffset);
+                highest = Mathf.Max(highest, tv.TickerOffset);
+            }
+            if (lowest < -20000f || highest > 830f)
+            {
+                Debug.LogError($"[News] Over sixteen minutes the ticker ranged {lowest:0} to {highest:0}. It is not " +
+                               "looping; it has scrolled away.");
+                problems++;
+            }
+
+            if (problems == 0)
+                Debug.Log("[News] PASS — the broadcast stands on the cabinet in the starting room, faces the player " +
+                          "with nothing in the way, carries no collider, and its ticker loops for good.");
+            else
+                Debug.LogError($"[News] FAIL — {problems} problem(s).");
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
@@ -11273,6 +11426,7 @@ namespace ZombieHouse.EditorTools
             CreateTexturedMaterial("cavity", new Color(0.085f, 0.045f, 0.038f),
                                    ProtoMaterials.SurfaceKind.Flesh, 1.5f, 0.45f, 0f);
             CreateMaterial("deadeye", new Color(0.56f, 0.55f, 0.49f), 0.82f, 0f);
+            CreateMaterial("tvplastic", new Color(0.035f, 0.035f, 0.04f), 0.6f, 0f);
 
             Material eyeGlint = CreateMaterial("eyeglint", new Color(0.42f, 0.40f, 0.34f), 0.6f, 0f);
             ProtoMaterials.MakeEmissive(eyeGlint, new Color(0.9f, 0.86f, 0.72f));

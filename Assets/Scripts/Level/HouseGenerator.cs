@@ -54,6 +54,12 @@ namespace ZombieHouse.Level
         [Header("Options")]
         [SerializeField] private bool generateOnAwake = true;
         [SerializeField] private bool buildProps = true;
+
+        [Tooltip("Put the emergency broadcast on a cabinet in the room the player starts in.")]
+        [SerializeField] private bool buildTelevision = true;
+
+        [Tooltip("Floor, row and column of the cabinet the television stands on. Must be a 'C'.")]
+        [SerializeField] private Vector3Int televisionCell = new Vector3Int(0, 1, 2);
         [SerializeField] private bool buildRoof = true;
         [SerializeField] private bool buildWallTrim = true;
         [Tooltip("Height of the dado rail, and of the panelling below it.")]
@@ -157,6 +163,9 @@ namespace ZombieHouse.Level
         // ---- results, read by LevelDirector --------------------------------
 
         public Vector3 PlayerSpawn { get; private set; }
+
+        /// <summary>The television running the emergency broadcast, if one was built.</summary>
+        public BreakingNewsTV Television { get; private set; }
         public List<Vector3> ZombieSpawns { get; } = new List<Vector3>();
         public List<Vector3> AmmoSpawns { get; } = new List<Vector3>();
         public List<Vector3> MedkitSpawns { get; } = new List<Vector3>();
@@ -245,6 +254,8 @@ namespace ZombieHouse.Level
                 ScanMarkers(f);
                 ScanHidingSpots(f);
             }
+
+            if (buildTelevision) BuildTelevision();
 
             if (buildRoof) BuildRoof(width, depth);
 
@@ -872,6 +883,56 @@ namespace ZombieHouse.Level
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Stands the emergency broadcast on the cabinet in the player's starting room, facing
+        /// into the room.
+        ///
+        /// Which way is "into the room" is worked out from the plan rather than typed in: the
+        /// television turns its back on whichever neighbouring cell is wall. A fixed facing
+        /// would be right for this cabinet and silently wrong the day the plan moves it, and a
+        /// broadcast shown to the wall is no broadcast at all -- Test Breaking News checks it
+        /// faces where the player starts.
+        ///
+        /// Nothing here has a collider, so the house NavMesh cannot notice it is there.
+        /// </summary>
+        private void BuildTelevision()
+        {
+            Television = null;
+
+            int f = televisionCell.x, r = televisionCell.y, c = televisionCell.z;
+            if (f < 0 || f >= FloorCount || r < 0 || r >= Rows || c < 0 || c >= Columns) return;
+
+            if (char.ToUpperInvariant(floors[f].rows[r][c]) != 'C')
+            {
+                Debug.LogWarning($"[HouseGenerator] The television cell ({f}, {r}, {c}) is not a cabinet; " +
+                                 "no television built.");
+                return;
+            }
+
+            Vector3 away = Vector3.zero;
+            int[] dr = { -1, 1, 0, 0 };
+            int[] dc = { 0, 0, -1, 1 };
+            for (int i = 0; i < 4; i++)
+            {
+                int nr = r + dr[i], nc = c + dc[i];
+                if (nr < 0 || nr >= Rows || nc < 0 || nc >= Columns) continue;
+                if (floors[f].rows[nr][nc] == '#') away += CellToLocal(r, c) - CellToLocal(nr, nc);
+            }
+            away.y = 0f;
+            if (away.sqrMagnitude < 1e-6f) away = Vector3.forward;
+            away.Normalize();
+
+            // The cabinet's top surface: its top slab is centred at 1.13 and 0.06 thick.
+            Vector3 top = CellToLocal(r, c) + Vector3.up * (FloorBaseY(f) + 1.16f);
+
+            BreakingNewsTV tv = BreakingNewsTV.Build(_container, ProtoMaterials.TvPlastic);
+
+            // Set back a little toward the wall, as a set stood on a sideboard is.
+            tv.transform.position = transform.position + top - away * 0.07f;
+            tv.transform.rotation = Quaternion.LookRotation(away, Vector3.up);
+            Television = tv;
         }
 
         private void BuildTable(Vector3 centre, int f, int r, int c)

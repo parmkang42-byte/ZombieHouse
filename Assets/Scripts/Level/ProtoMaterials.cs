@@ -684,6 +684,9 @@ namespace ZombieHouse.Level
         public static Material Wood => Get("wood", new Color(0.30f, 0.20f, 0.13f), 0.12f);
         public static Material Fabric => Get("fabric", new Color(0.26f, 0.28f, 0.32f), 0.04f);
         public static Material Metal => Get("metal", new Color(0.42f, 0.44f, 0.47f), 0.55f, 0.7f);
+
+        /// <summary>Black gloss plastic, for the television's body and stand.</summary>
+        public static Material TvPlastic => Get("tvplastic", new Color(0.035f, 0.035f, 0.04f), 0.6f);
         public static Material Linen => Get("linen", new Color(0.62f, 0.60f, 0.56f), 0.08f);
     }
 }
