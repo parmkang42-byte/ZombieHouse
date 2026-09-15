@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -10,7 +11,7 @@ namespace ZombieHouse.Core
     /// Loads a scene behind a loading screen whose bar shades in as the load goes.
     ///
     /// Every scene load in the game goes through here: starting the game from the Boot scene,
-    /// and restarting a level. See LoadProgress for why the bar is split into a loading half and
+    /// moving on to the next level, and restarting one. See LoadProgress for why the bar is split into a loading half and
     /// a building half, and why the split is learned rather than chosen.
     /// </summary>
     public static class SceneLoader
@@ -29,6 +30,58 @@ namespace ZombieHouse.Core
         public static void Reload()
         {
             Load(SceneManager.GetActiveScene().name);
+        }
+
+        /// <summary>The scenes a player build contains, by name, in build order.</summary>
+        public static string[] BuildOrder()
+        {
+            var names = new string[SceneManager.sceneCountInBuildSettings];
+            for (int i = 0; i < names.Length; i++)
+                names[i] = System.IO.Path.GetFileNameWithoutExtension(SceneUtility.GetScenePathByBuildIndex(i));
+            return names;
+        }
+
+        /// <summary>A playable level ("Level3_Town"), as opposed to Boot or a test scene.</summary>
+        public static bool IsLevel(string sceneName)
+        {
+            return !string.IsNullOrEmpty(sceneName) && Regex.IsMatch(sceneName, @"^Level\d+_");
+        }
+
+        /// <summary>The 3 in "Level3_Town"; 0 for anything that is not a level.</summary>
+        public static int LevelNumber(string sceneName)
+        {
+            if (string.IsNullOrEmpty(sceneName)) return 0;
+            Match m = Regex.Match(sceneName, @"^Level(\d+)_");
+            return m.Success ? int.Parse(m.Groups[1].Value) : 0;
+        }
+
+        /// <summary>
+        /// The level after <paramref name="current"/> in <paramref name="order"/>, or null when it is
+        /// the last one, or is not a level in the build at all.
+        ///
+        /// Read off the build order rather than off the number in the name, so the order the game
+        /// plays in is the one order that already exists and is already tested (Test Loading) --
+        /// not a second list that could disagree with it.
+        /// </summary>
+        public static string NextLevel(string current, IList<string> order)
+        {
+            if (!IsLevel(current) || order == null) return null;
+
+            int at = order.IndexOf(current);
+            if (at < 0) return null;
+
+            for (int i = at + 1; i < order.Count; i++)
+                if (IsLevel(order[i])) return order[i];
+            return null;
+        }
+
+        /// <summary>The first level in <paramref name="order"/>, or null if it has none.</summary>
+        public static string FirstLevel(IList<string> order)
+        {
+            if (order == null) return null;
+            foreach (string name in order)
+                if (IsLevel(name)) return name;
+            return null;
         }
 
         /// <summary>"Level1_House" as the screen shows it: "LEVEL 1 · HOUSE".</summary>

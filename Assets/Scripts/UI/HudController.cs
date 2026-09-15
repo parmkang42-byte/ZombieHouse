@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using ZombieHouse.Combat;
 using ZombieHouse.Core;
@@ -76,6 +77,9 @@ namespace ZombieHouse.UI
         private Image _overlayBacking;
         private Text _overlayTitle;
         private Text _overlaySubtitle;
+
+        // Where Enter goes from the win screen, looked up once rather than every frame it is shown.
+        private string _winTarget;
 
         private float _hitMarkerUntil;
         private bool _lastHitCritical;
@@ -647,8 +651,8 @@ namespace ZombieHouse.UI
                 case GameState.Won:
                     _overlayTitle.text = "EXTRACTED";
                     _overlayTitle.color = good;
-                    _overlaySubtitle.text = "House cleared — " + game.ZombiesKilled +
-                                            " down.    Enter to play again";
+                    _overlaySubtitle.text = WinPrompt(SceneManager.GetActiveScene().name,
+                                                      _winTarget ??= game.NextScene, game.ZombiesKilled);
                     break;
 
                 case GameState.Lost:
@@ -658,6 +662,25 @@ namespace ZombieHouse.UI
                                             " killed before they got you.    Enter to try again";
                     break;
             }
+        }
+
+        /// <summary>
+        /// The line under EXTRACTED, which has to say what Enter will do -- it no longer just
+        /// replays the level, and a key whose effect you have to discover by pressing it is one
+        /// you hesitate over.
+        /// </summary>
+        public static string WinPrompt(string current, string target, int kills)
+        {
+            string down = kills + " down.    ";
+
+            if (string.IsNullOrEmpty(target) || target == current)
+                return "Level cleared — " + down + "Enter to play again";
+
+            // Going back down the numbers is the run starting over, not another level.
+            if (SceneLoader.LevelNumber(target) <= SceneLoader.LevelNumber(current))
+                return "Every level survived — " + down + "Enter to start again from " + SceneLoader.DisplayName(target);
+
+            return "Level cleared — " + down + "Enter for " + SceneLoader.DisplayName(target);
         }
 
         // ---- events ---------------------------------------------------------

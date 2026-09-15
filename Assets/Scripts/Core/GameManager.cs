@@ -132,10 +132,10 @@ namespace ZombieHouse.Core
                 else if (State == GameState.Paused) SetState(GameState.Playing);
             }
 
-            // Restart is available from any end state.
+            // From either end state, the same key: onward after a win, again after a death.
             if ((State == GameState.Won || State == GameState.Lost) && Player.InputReader.RestartPressed)
             {
-                Restart();
+                Continue();
             }
         }
 
@@ -251,6 +251,34 @@ namespace ZombieHouse.Core
         {
             if (State == GameState.Won || State == GameState.Lost) return;
             SetState(GameState.Won);
+        }
+
+        /// <summary>The scene Enter loads from the end screen: see <see cref="ContinueTarget"/>.</summary>
+        public string NextScene =>
+            ContinueTarget(State, SceneManager.GetActiveScene().name, SceneLoader.BuildOrder());
+
+        /// <summary>
+        /// Where Enter goes from an end state.
+        ///
+        /// A win moves on to the next level in the build, and a win on the last level starts the
+        /// run over from the first. A death, and a win in a scene that is not a level in the build
+        /// (a test scene played from the editor), stays put -- sending someone who beat a sandbox
+        /// scene to level 1 would be a surprise, and the old behaviour was always "play it again".
+        /// </summary>
+        public static string ContinueTarget(GameState state, string current, IList<string> buildOrder)
+        {
+            if (state != GameState.Won || !SceneLoader.IsLevel(current)
+                || buildOrder == null || !buildOrder.Contains(current))
+                return current;
+
+            return SceneLoader.NextLevel(current, buildOrder) ?? SceneLoader.FirstLevel(buildOrder) ?? current;
+        }
+
+        /// <summary>Leaves the end screen: the next level after a win, this one again after a death.</summary>
+        public void Continue()
+        {
+            Time.timeScale = 1f;
+            SceneLoader.Load(NextScene);
         }
 
         public void Restart()
