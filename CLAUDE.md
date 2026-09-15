@@ -323,6 +323,20 @@ robocopy "<project>\ProjectSettings" "<stage>\ProjectSettings" /E /NFL /NDL /NJH
   -logFile "<stage>/verify.log"
 ```
 
+**Build order is Boot, then the eight levels in `Levels`-table order.** `AddSceneToBuildSettings`
+used to insert every new scene at index 0, so the list was reversed — the Cormorant at 0 — and a
+player build would have launched on the ship; the editor ignores the order, so nobody saw.
+It now appends and re-sorts against the `Levels` table, and `Test Loading` asserts the order.
+Index 0 is `Boot.unity`, whose only job is to load the first level behind the loading screen:
+Unity opens index 0 before any script runs, so that scene cannot show a bar for itself.
+
+**Every scene load goes through `SceneLoader`.** The bar is split into a loading half (Unity's
+real async progress) and a building half, because every generator runs in `Awake` and the NavMesh
+bakes inside one blocking frame that nothing can draw during. The split is *learned*: each load
+records how long each half took and moves the stored share halfway toward it (PlayerPrefs, per
+scene), so the bar pauses at a point proportional to the time left. `LoadProgress` never moves
+backwards and never claims the building half before the level is built.
+
 **Copying results back from a stage means `ProjectSettings/` too, not just `Assets/`.**
 `AddSceneToBuildSettings` writes `ProjectSettings/EditorBuildSettings.asset`, so a level built
 in a stage is registered *in the stage*. Copy back only `Assets/` and the new scene exists,
@@ -346,7 +360,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`, `TestLoading`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

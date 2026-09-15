@@ -256,7 +256,11 @@ namespace ZombieHouse.Core
         public void Restart()
         {
             Time.timeScale = 1f;
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+
+            // Behind the loading screen, like every other scene load. This was a blocking
+            // LoadScene, which froze the last frame of the death screen for however long the
+            // level took to build, with nothing to say it had not simply crashed.
+            SceneLoader.Reload();
         }
 
         private void SetState(GameState next)

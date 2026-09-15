@@ -465,6 +465,11 @@ sound a *crew* makes, and the crew is what is missing.
 
 ## Getting it running
 
+A player build opens `Boot`, which loads Level 1 behind a loading screen; restarting a level
+goes through the same screen. The bar fills with the real load, then pauses while the level
+builds itself — and where it pauses is learned from how long that level actually took last
+time, so the pause is proportional to what is left.
+
 1. Open Unity Hub → **Add** → select this folder → open with 6000.5.8f1.
 2. Menu bar → **Zombie House → Build Level 1 Scene**.
 3. Press **Play**.

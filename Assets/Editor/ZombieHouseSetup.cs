@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -10854,6 +10855,167 @@ namespace ZombieHouse.EditorTools
                 Debug.LogError($"[Sway] FAIL — {problems} problem(s).");
         }
 
+        /// <summary>
+        /// The loading bar tells the truth, and the game starts where it should.
+        ///
+        /// WHAT CAN AND CANNOT BE TESTED HERE. The async load itself only runs in play mode, which
+        /// a batch run does not have. What it is built from can be: the progress model that decides
+        /// what the bar shows, the rule that learns each level's split, the overlay drawn at a given
+        /// fraction, and the build order a player build actually launches with.
+        ///
+        /// THE HONESTY RULES. The bar never moves backwards, and it never claims any of the building
+        /// half until the level says it is built -- full means playable, not merely read off disk.
+        /// Both are asserted against a load sequence that includes Unity reporting progress out of
+        /// order, which it is allowed to.
+        ///
+        /// THE BUILD ORDER. It was reversed -- every newly registered scene went in at index 0 -- so a
+        /// player build would have launched on the Cormorant. Nothing looked, because the editor
+        /// ignores the order.
+        /// </summary>
+        [MenuItem("Zombie House/Test Loading", false, 60)]
+        public static void TestLoading()
+        {
+            int problems = 0;
+
+            // --- the progress model -------------------------------------------------
+            var progress = new LoadProgress(0.3f);
+            float last = 0f;
+            bool backwards = false, overclaimed = false;
+
+            foreach (float reported in new[] { 0f, 0.2f, 0.5f, 0.45f, 0.8f, 1f })
+            {
+                progress.ReportLoading(reported);
+                if (progress.Value < last - 1e-6f) backwards = true;
+                if (progress.Value > progress.AssetShare + 1e-6f) overclaimed = true;
+                last = progress.Value;
+            }
+
+            progress.BeginBuilding();
+            if (Mathf.Abs(progress.Value - 0.3f) > 1e-5f)
+            {
+                Debug.LogError($"[Loading] Starting to build should put the bar at the end of the loading half " +
+                               $"(0.30); it is at {progress.Value:0.000}.");
+                problems++;
+            }
+
+            progress.ReportLoading(1f);          // late reports during building must change nothing
+            if (progress.Value > progress.AssetShare + 1e-6f) overclaimed = true;
+
+            progress.Complete();
+            if (backwards)
+            {
+                Debug.LogError("[Loading] The bar moved backwards when Unity reported progress out of order.");
+                problems++;
+            }
+            if (overclaimed)
+            {
+                Debug.LogError("[Loading] The bar claimed part of the building half before the level was built. " +
+                               "Full has to mean playable.");
+                problems++;
+            }
+            if (!Mathf.Approximately(progress.Value, 1f))
+            {
+                Debug.LogError($"[Loading] A completed load shows {progress.Value:0.000}, not full.");
+                problems++;
+            }
+
+            // --- learning each level's split ------------------------------------------
+            float learned = LoadProgress.Learn(0.35f, 1f, 3f);   // building took three quarters
+            if (Mathf.Abs(learned - 0.30f) > 1e-4f)
+            {
+                Debug.LogError($"[Loading] After a load that spent a quarter of its time loading, the share moved " +
+                               $"to {learned:0.000}; it should move halfway toward 0.25, to 0.300.");
+                problems++;
+            }
+            if (LoadProgress.Learn(0.35f, 10f, 0f) > LoadProgress.MaxShare + 1e-6f ||
+                LoadProgress.Learn(0.35f, 0f, 10f) < LoadProgress.MinShare - 1e-6f)
+            {
+                Debug.LogError("[Loading] One extreme load let a half claim the whole bar.");
+                problems++;
+            }
+            if (!Mathf.Approximately(LoadProgress.Learn(0.42f, 0f, 0f), 0.42f))
+            {
+                Debug.LogError("[Loading] A load with no timing changed the remembered share.");
+                problems++;
+            }
+
+            // --- what the screen calls a level ---------------------------------------
+            foreach (var (scene, want) in new[] { ("Level1_House", "LEVEL 1 · HOUSE"),
+                                                  ("Level8_Cormorant", "LEVEL 8 · CORMORANT") })
+            {
+                string got = SceneLoader.DisplayName(scene);
+                if (got != want)
+                {
+                    Debug.LogError($"[Loading] '{scene}' is shown as '{got}', not '{want}'.");
+                    problems++;
+                }
+            }
+
+            // --- the overlay draws what it is told ----------------------------------
+            LoadingScreen screen = LoadingScreen.Create("TEST");
+            try
+            {
+                screen.Show(0.37f, "Building the level");
+                var fill = screen.transform.Find("Track/Fill") as RectTransform;
+                if (fill == null || Mathf.Abs(fill.anchorMax.x - 0.37f) > 1e-4f || screen.PercentText != "37%")
+                {
+                    Debug.LogError($"[Loading] Drawn at 0.37 the fill reaches {(fill != null ? fill.anchorMax.x : -1f):0.000} " +
+                                   $"and reads '{screen.PercentText}'.");
+                    problems++;
+                }
+
+                var fillImage = fill != null ? fill.GetComponent<UnityEngine.UI.Image>() : null;
+                Color early = fillImage != null ? fillImage.color : Color.clear;
+                screen.Show(1f, "Ready");
+                Color late = fillImage != null ? fillImage.color : Color.clear;
+                if (fillImage == null || Mathf.Abs(early.grayscale - late.grayscale) < 0.2f)
+                {
+                    Debug.LogError("[Loading] The bar is the same shade at 37% and at 100%. It is meant to shade " +
+                                   "as it fills.");
+                    problems++;
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(screen.gameObject);
+            }
+
+            // --- the game starts on Boot, and Boot loads the first level -------------
+            EditorBuildSettingsScene[] order = EditorBuildSettings.scenes;
+            var paths = order.Select(e => e.path).ToList();
+            var expected = new List<string> { BootScenePath };
+            expected.AddRange(Levels.Select(l => l.Scene));
+
+            if (!paths.SequenceEqual(expected) || order.Any(e => !e.enabled))
+            {
+                Debug.LogError("[Loading] Build order is [" + string.Join(", ", paths.Select(Path.GetFileNameWithoutExtension)) +
+                               "], not Boot then the levels in order. A player build launches whatever is first.");
+                problems++;
+            }
+
+            Boot boot = null;
+            if (File.Exists(BootScenePath))
+            {
+                EditorSceneManager.OpenScene(BootScenePath, OpenSceneMode.Single);
+                boot = Object.FindAnyObjectByType<Boot>();
+            }
+            string firstLevel = Path.GetFileNameWithoutExtension(Levels[0].Scene);
+            if (boot == null || boot.FirstScene != firstLevel)
+            {
+                Debug.LogError($"[Loading] The Boot scene loads '{(boot != null ? boot.FirstScene : "nothing")}', " +
+                               $"not '{firstLevel}'.");
+                problems++;
+            }
+
+            Debug.Log($"[Loading] build order: {string.Join(" -> ", paths.Select(Path.GetFileNameWithoutExtension))}");
+
+            if (problems == 0)
+                Debug.Log("[Loading] PASS — the bar never goes back or claims a level is built before it is, " +
+                          "learns each level's split, shades as it fills, and the game starts on Boot then the house.");
+            else
+                Debug.LogError($"[Loading] FAIL — {problems} problem(s).");
+        }
+
         private static void CreatePlaceholderMaterials()
         {
             CreateMaterial("floor", new Color(0.32f, 0.29f, 0.26f), 0.05f, 0f);
@@ -12315,14 +12477,105 @@ namespace ZombieHouse.EditorTools
             property.objectReferenceValue = value;
         }
 
+        private const string BootScenePath = "Assets/Scenes/Boot.unity";
+
+        /// <summary>
+        /// Registers a scene and puts the whole list back in playing order.
+        ///
+        /// This used to insert each new scene at index 0, so the list ended up in reverse order
+        /// of when levels were first built: the Cormorant at 0 and the house at 7. A player
+        /// build opens index 0, so it would have launched on the ship. Nothing noticed, because
+        /// the game has always been played by pressing Play on a scene in the editor, which
+        /// ignores the order entirely. Test Loading now checks it.
+        /// </summary>
         private static void AddSceneToBuildSettings(string path)
         {
             var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            bool present = false;
             foreach (var entry in scenes)
-                if (entry.path == path) return;
+                if (entry.path == path) { present = true; break; }
 
-            scenes.Insert(0, new EditorBuildSettingsScene(path, true));
-            EditorBuildSettings.scenes = scenes.ToArray();
+            if (!present) scenes.Add(new EditorBuildSettingsScene(path, true));
+
+            EnsureBootScene();
+            if (!scenes.Exists(e => e.path == BootScenePath))
+                scenes.Add(new EditorBuildSettingsScene(BootScenePath, true));
+
+            EditorBuildSettings.scenes = InPlayingOrder(scenes).ToArray();
+        }
+
+        /// <summary>
+        /// Boot, then the levels in the order the shared Levels table lists them, then anything
+        /// else in the order it was already in. The Levels table is the one list of levels in
+        /// this project, so the build order cannot drift from it.
+        /// </summary>
+        private static List<EditorBuildSettingsScene> InPlayingOrder(List<EditorBuildSettingsScene> scenes)
+        {
+            int Rank(string path)
+            {
+                if (path == BootScenePath) return -1;
+                for (int i = 0; i < Levels.Length; i++)
+                    if (Levels[i].Scene == path) return i;
+                return Levels.Length;
+            }
+
+            var ordered = new List<EditorBuildSettingsScene>(scenes);
+            // A stable sort, so scenes outside the table keep their relative order.
+            ordered = ordered
+                .Select((scene, index) => (scene, index))
+                .OrderBy(pair => Rank(pair.scene.path))
+                .ThenBy(pair => pair.index)
+                .Select(pair => pair.scene)
+                .ToList();
+            return ordered;
+        }
+
+        /// <summary>
+        /// The Boot scene: a black camera and the component that loads the first level behind
+        /// the loading screen. Built only if it is missing, so rebuilding a level does not
+        /// rewrite it for nothing.
+        /// </summary>
+        private static void EnsureBootScene()
+        {
+            if (File.Exists(BootScenePath)) return;
+
+            // Single, then reopen whatever was open. Additive would be tidier, and Unity refuses
+            // it whenever the open scene is untitled -- which is how every batch run starts.
+            string previousPath = EditorSceneManager.GetActiveScene().path;
+
+            Scene boot = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var cameraObject = new GameObject("Boot Camera");
+            var camera = cameraObject.AddComponent<Camera>();
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = Color.black;
+            cameraObject.AddComponent<AudioListener>();
+            SceneManager.MoveGameObjectToScene(cameraObject, boot);
+
+            var bootObject = new GameObject("Boot");
+            var component = bootObject.AddComponent<Boot>();
+            var so = new SerializedObject(component);
+            so.FindProperty("firstScene").stringValue = Path.GetFileNameWithoutExtension(Levels[0].Scene);
+            so.ApplyModifiedPropertiesWithoutUndo();
+            SceneManager.MoveGameObjectToScene(bootObject, boot);
+
+            EnsureFolder(ScenesFolder);
+            EditorSceneManager.SaveScene(boot, BootScenePath);
+
+            if (!string.IsNullOrEmpty(previousPath) && File.Exists(previousPath))
+                EditorSceneManager.OpenScene(previousPath, OpenSceneMode.Single);
+        }
+
+        [MenuItem("Zombie House/Build Boot Scene", false, 9)]
+        public static void BuildBootScene()
+        {
+            EnsureBootScene();
+            var scenes = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
+            if (!scenes.Exists(e => e.path == BootScenePath))
+                scenes.Add(new EditorBuildSettingsScene(BootScenePath, true));
+            EditorBuildSettings.scenes = InPlayingOrder(scenes).ToArray();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[ZombieHouse] Boot scene ready; build order is Boot then the eight levels.");
         }
 
         private static void SetLayerRecursively(GameObject go, int layer)
