@@ -36,6 +36,13 @@ as the source, hospitals overwhelmed, evacuation at dawn, *if someone you love h
 do not let them in*. It is the explanation for everything that follows, and it arrives before
 the first walker does without stopping the game to tell it.
 
+It has sound, too: the channel's breaking-news jingle — two minor stabs, a climb, a held
+suspended chord and a D major landing on the timpani — and then the urgent bed they run under
+a rolling story, looping. All of it comes out of the set's own small speaker: no bass, no top,
+static underneath, so it sounds like a television in the next room and not like the score. You
+hear it from where you start and not from the far end of the house, and when the picture drops
+out the sound drops with it. There is no voice; the words are on the screen.
+
 ### Level 2 — the forest
 
 A seeded wood inside a ring of cliffs. You start in a clearing at one edge and have to cross
@@ -474,8 +481,8 @@ sound a *crew* makes, and the crew is what is missing.
 
 ## Getting it running
 
-A player build opens `Boot`, which loads Level 1 behind a loading screen; restarting a level
-goes through the same screen. The bar fills with the real load, then pauses while the level
+A player build opens `Boot`, which loads Level 1 behind a loading screen; moving on to the next
+level and restarting one go through the same screen. The bar fills with the real load, then pauses while the level
 builds itself — and where it pauses is learned from how long that level actually took last
 time, so the pause is proportional to what is left.
 
@@ -507,7 +514,7 @@ Re-run it any time to rebuild the scene from scratch.
 | F | Torch on / off — and, on a flat cell, fit a spare |
 | **Shift** (or R) | Reload — **throws away whatever is left in the magazine** |
 | Esc | Pause |
-| Enter | Restart after win/lose |
+| Enter | Next level after a win, retry after a death |
 
 Aiming is on right mouse. The katana is on **right Ctrl** — the one beside the arrow keys,
 away from the movement hand — or the forward ("advance") thumb button, button 5 on an MX
@@ -554,7 +561,7 @@ down mid-fight and reach for the mouse without touching a menu.
 | Back paddle | The scavenged Uzi, while you have one |
 | D-pad ↓ | Torch |
 | Menu / Start | Pause |
-| View / Back | Restart after win/lose |
+| View / Back | Next level after a win, retry after a death |
 
 The Uzi is on the **back paddles** because it is the weapon that most needs a button of its
 own: you pick it up mid-fight, it has a hard round count, and it takes itself out of your hands
@@ -1048,6 +1055,10 @@ ends the level while there is still a level to end. The share is `requiredKillFr
 Clear the house, find everyone, then reach the extraction pad in the master bedroom
 (south-east corner). The pad stays red and inert until both conditions are met, then turns
 green. Die and you restart.
+
+Get out and **Enter** (or View / Back on a pad) takes you on to the next level, in order, from
+the house to the Cormorant; the end screen names where it is going. Get off the Cormorant and it
+starts the run again from the house. Every level starts you fresh.
 
 ---
 

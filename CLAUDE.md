@@ -337,6 +337,18 @@ records how long each half took and moves the stored share halfway toward it (Pl
 scene), so the bar pauses at a point proportional to the time left. `LoadProgress` never moves
 backwards and never claims the building half before the level is built.
 
+**Levels chain by build order.** Enter on the win screen loads `GameManager.ContinueTarget`: the
+next level in the build (read off `SceneLoader.BuildOrder`, never off the number in the name),
+the first level after the last, and the same scene after a death or in any scene that is not a
+level in the build. So the build order is now gameplay, not just packaging — `Test Progression`
+walks the `Levels` table against it, and a level missing from the build is a level the one before
+it cannot reach.
+
+**The TV's speaker is made at run time.** `BreakingNewsTV.Start` attaches it and loads
+`Sfx.NewsBroadcast`, because the clip is synthesised at startup and cannot be saved into the
+scene — which is also why giving the set sound needed no house rebuild. Its volume is multiplied by
+the screen's alpha every tick, so it drops out with the picture.
+
 **Copying results back from a stage means `ProjectSettings/` too, not just `Assets/`.**
 `AddSceneToBuildSettings` writes `ProjectSettings/EditorBuildSettings.asset`, so a level built
 in a stage is registered *in the stage*. Copy back only `Assets/` and the new scene exists,
@@ -364,7 +376,7 @@ bake the NavMesh and prove every spawn and the exit are reachable. `VerifyCormor
 
 Tests: `TestProps`, `TestBoss`, `TestDread`, `TestMerryland`, `TestReload`, `TestSafeStart`, `TestMusic`, `TestGatling`,
 `TestPostFx`, `TestSchool`, `TestPyramid`, `TestBear`, `TestPower`, `TestSurvivors`,
-`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`, `TestLoading`, `TestBreakingNews`. All print PASS/FAIL.
+`TestRagdoll`, `TestFlashlight`, `TestRecoil`, `TestReloadSwitch`, `TestZombieRoster`, `TestSailors`, `TestGamepad`, `TestGulls`, `TestPrefabMaterials`, `TestCrowding`, `TestSkin`, `TestShadows`, `TestFootPlacement`, `TestBodyMeshes`, `TestColorSpace`, `TestGait`, `TestHeads`, `TestScopeSway`, `TestLoading`, `TestBreakingNews`, `TestProgression`. All print PASS/FAIL.
 The weapons test is on the menu as `Test Weapons` but the method is `TestGatling` — `-executeMethod` takes the method name, not the menu path.
 
 ---

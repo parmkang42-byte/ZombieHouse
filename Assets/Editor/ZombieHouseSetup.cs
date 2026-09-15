@@ -11138,6 +11138,9 @@ namespace ZombieHouse.EditorTools
                 problems++;
             }
 
+            // --- the sound ------------------------------------------------------------------------------
+            problems += CheckBroadcastSound(tv, house, distance);
+
             // --- alive ------------------------------------------------------------------------------
             float start = tv.TickerOffset;
             tv.Tick(1f);
@@ -11149,11 +11152,16 @@ namespace ZombieHouse.EditorTools
             }
 
             float lowest = float.MaxValue, highest = float.MinValue;
+            int glitchFrames = 0, unsynced = 0;
             for (int i = 0; i < 20000; i++)
             {
                 tv.Tick(0.05f);
                 lowest = Mathf.Min(lowest, tv.TickerOffset);
                 highest = Mathf.Max(highest, tv.TickerOffset);
+
+                if (tv.ScreenAlpha < 0.99f) glitchFrames++;
+                if (tv.Speaker != null && Mathf.Abs(tv.Speaker.volume - tv.SpeakerBaseVolume * tv.ScreenAlpha) > 1e-4f)
+                    unsynced++;
             }
             if (lowest < -20000f || highest > 830f)
             {
@@ -11162,11 +11170,289 @@ namespace ZombieHouse.EditorTools
                 problems++;
             }
 
+            // The sound drops out with the picture. Needs a glitch to have happened to mean anything:
+            // sixteen minutes at one every 6-12 s is about a hundred of them.
+            if (glitchFrames == 0)
+            {
+                Debug.LogError("[News] In sixteen minutes the signal never glitched once.");
+                problems++;
+            }
+            if (unsynced > 0)
+            {
+                Debug.LogError($"[News] On {unsynced} of 20000 frames the speaker's volume did not follow the picture " +
+                               $"({glitchFrames} glitch frames). The sound should drop out when the signal does.");
+                problems++;
+            }
+
             if (problems == 0)
                 Debug.Log("[News] PASS — the broadcast stands on the cabinet in the starting room, faces the player " +
-                          "with nothing in the way, carries no collider, and its ticker loops for good.");
+                          "with nothing in the way, carries no collider, plays its jingle through a television's " +
+                          "speaker that the player can hear from the start, drops out with the picture, and its " +
+                          "ticker loops for good.");
             else
                 Debug.LogError($"[News] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// The broadcast's sound: a jingle you can pick out, a speaker that sounds like a television,
+        /// a loop that does not click, and a set the player hears from the start and the far end of
+        /// the house does not.
+        ///
+        /// Measured on the samples SoundBank builds, because "a clip exists" would pass a clip of
+        /// silence, and on the speaker the set actually makes.
+        /// </summary>
+        private static int CheckBroadcastSound(BreakingNewsTV tv, HouseGenerator house, float distanceToStart)
+        {
+            int problems = 0;
+            float[] samples = ZombieHouse.Audio.SoundBank.NewsBroadcast(new System.Random(1337));
+            int rate = ZombieHouse.Audio.ProceduralAudio.SampleRate;
+
+            if (samples.Any(s => float.IsNaN(s) || float.IsInfinity(s)))
+            {
+                Debug.LogError("[News] The broadcast has NaN or infinite samples in it.");
+                return 1;
+            }
+
+            // --- the jingle stands out from the bed ---------------------------------------
+            // Three decibels, root two in amplitude: the step at which a change in level reads as
+            // "louder" rather than "about the same". A sting that does not clear it is part of the bed.
+            float jingle = Rms(samples, 0, (int)((ZombieHouse.Audio.SoundBank.NewsJingleSeconds - 0.4f) * rate));
+            float bed = Rms(samples, (int)(6f * rate), samples.Length);
+            Debug.Log($"[News] jingle RMS {jingle:0.000}, bed RMS {bed:0.000} (x{jingle / Mathf.Max(1e-6f, bed):0.00}).");
+            if (jingle < bed * Mathf.Sqrt(2f))
+            {
+                Debug.LogError($"[News] The jingle is only x{jingle / Mathf.Max(1e-6f, bed):0.00} the level of the bed under " +
+                               "it. It does not stand out as a sting.");
+                problems++;
+            }
+
+            // --- a television's speaker ------------------------------------------------------
+            // Read off a real spectrum. Measuring with the same one-pole filters the recipe uses was
+            // tried first and reported 15% "below 110 Hz" from a clip high-passed at 220 twice: a
+            // one-pole slope is so gentle that most of what it passed was the 150-300 Hz band.
+            double[] spectrum = PowerSpectrum(samples, 4096, rate, out float binHz);
+            double all = 0, below = 0, above = 0;
+            for (int k = 1; k < spectrum.Length; k++)
+            {
+                float hz = k * binHz;
+                all += spectrum[k];
+                if (hz < 110f) below += spectrum[k];
+                if (hz > 6000f) above += spectrum[k];
+            }
+            float lowShare = (float)System.Math.Sqrt(below / System.Math.Max(1e-12, all));
+            float highShare = (float)System.Math.Sqrt(above / System.Math.Max(1e-12, all));
+            Debug.Log($"[News] below 110 Hz {lowShare:0.000} of the level, above 6 kHz {highShare:0.000}.");
+            if (lowShare > BroadcastMaxLowShare || highShare > BroadcastMaxHighShare)
+            {
+                Debug.LogError($"[News] The broadcast has {lowShare:0.000} of its level below 110 Hz and {highShare:0.000} " +
+                               $"above 6 kHz (limits {BroadcastMaxLowShare} and {BroadcastMaxHighShare}). A television's " +
+                               "speaker has neither; without the band limit it is music in the room, not a TV.");
+                problems++;
+            }
+
+            // --- the loop point does not click -------------------------------------------------
+            // Judged against the clip's own sample-to-sample movement rather than a number: the join
+            // may be no bigger a step than 999 in 1000 of the steps that are not a join.
+            var steps = new float[samples.Length - 1];
+            for (int i = 0; i < steps.Length; i++) steps[i] = Mathf.Abs(samples[i + 1] - samples[i]);
+            System.Array.Sort(steps);
+            float typicalMax = steps[(int)(steps.Length * 0.999f)];
+            float seam = Mathf.Abs(samples[0] - samples[samples.Length - 1]);
+            if (seam > typicalMax)
+            {
+                Debug.LogError($"[News] The loop joins with a step of {seam:0.0000}, bigger than 99.9% of the clip's own " +
+                               $"({typicalMax:0.0000}). It will click every {ZombieHouse.Audio.SoundBank.NewsLoopSeconds:0} seconds.");
+                problems++;
+            }
+
+            // --- the set plays it ----------------------------------------------------------------
+            tv.StartBroadcastAudio(ZombieHouse.Audio.ProceduralAudio.ToClip("NewsBroadcastTest", samples, true));
+            AudioSource speaker = tv.Speaker;
+            if (speaker == null || speaker.clip == null || !speaker.loop)
+            {
+                Debug.LogError("[News] The television has no looping speaker once the broadcast starts.");
+                return problems + 1;
+            }
+            if (speaker.spatialBlend < 1f || speaker.rolloffMode != AudioRolloffMode.Linear)
+            {
+                Debug.LogError("[News] The speaker is not fully positional with a linear rolloff. It would play at the " +
+                               "same volume everywhere in the house, like the score.");
+                problems++;
+            }
+
+            // Heard from where the player starts, at a quarter of full volume or more...
+            float atStart = Mathf.Clamp01((speaker.maxDistance - distanceToStart) /
+                                          Mathf.Max(0.01f, speaker.maxDistance - speaker.minDistance));
+            // ...and not where most of the walkers start. That is "the rest of the house".
+            List<Vector3> spawns = house.ZombieSpawns;
+            int outOfEarshot = spawns.Count(p => Vector3.Distance(p, speaker.transform.position) > speaker.maxDistance);
+            Debug.Log($"[News] speaker at {atStart:0.00} of full volume at the player's start; " +
+                      $"{outOfEarshot} of {spawns.Count} zombie spawns out of earshot.");
+            if (atStart < 0.25f)
+            {
+                Debug.LogError($"[News] From the player's start the broadcast plays at {atStart:0.00} of its volume. " +
+                               "The jingle is meant to be heard as the level opens.");
+                problems++;
+            }
+            if (spawns.Count == 0 || outOfEarshot * 2 < spawns.Count)
+            {
+                Debug.LogError($"[News] Only {outOfEarshot} of {spawns.Count} zombie spawns are out of earshot. The " +
+                               "broadcast belongs to its room, not the whole house.");
+                problems++;
+            }
+
+            return problems;
+        }
+
+        // Shares of the broadcast's level allowed outside a television speaker's band -- one tenth,
+        // twenty decibels down. Measured: the shipped clip is 0.067 below 110 Hz and 0.035 above
+        // 6 kHz; with the speaker's band limit taken out it is 0.324 and 0.374. Two filter passes
+        // instead of three measured 0.124 below, and that is why there are three.
+        private const float BroadcastMaxLowShare = 0.10f;
+        private const float BroadcastMaxHighShare = 0.10f;
+
+        /// <summary>Power per frequency bin, averaged over Hann-windowed frames of <paramref name="size"/> (a power of two).</summary>
+        private static double[] PowerSpectrum(float[] data, int size, int sampleRate, out float binHz)
+        {
+            binHz = (float)sampleRate / size;
+            var power = new double[size / 2];
+            var re = new double[size];
+            var im = new double[size];
+
+            for (int start = 0; start + size <= data.Length; start += size)
+            {
+                for (int i = 0; i < size; i++)
+                {
+                    re[i] = data[start + i] * (0.5 - 0.5 * System.Math.Cos(2 * System.Math.PI * i / (size - 1)));
+                    im[i] = 0;
+                }
+                Fft(re, im);
+                for (int k = 0; k < power.Length; k++) power[k] += re[k] * re[k] + im[k] * im[k];
+            }
+            return power;
+        }
+
+        /// <summary>In-place iterative radix-2 FFT.</summary>
+        private static void Fft(double[] re, double[] im)
+        {
+            int n = re.Length;
+            for (int i = 1, j = 0; i < n; i++)
+            {
+                int bit = n >> 1;
+                for (; (j & bit) != 0; bit >>= 1) j ^= bit;
+                j ^= bit;
+                if (i < j)
+                {
+                    (re[i], re[j]) = (re[j], re[i]);
+                    (im[i], im[j]) = (im[j], im[i]);
+                }
+            }
+
+            for (int len = 2; len <= n; len <<= 1)
+            {
+                double angle = -2 * System.Math.PI / len;
+                double wr = System.Math.Cos(angle), wi = System.Math.Sin(angle);
+                for (int i = 0; i < n; i += len)
+                {
+                    double cr = 1, ci = 0;
+                    for (int k = 0; k < len / 2; k++)
+                    {
+                        int a = i + k, b = i + k + len / 2;
+                        double tr = re[b] * cr - im[b] * ci;
+                        double ti = re[b] * ci + im[b] * cr;
+                        re[b] = re[a] - tr; im[b] = im[a] - ti;
+                        re[a] += tr; im[a] += ti;
+                        double ncr = cr * wr - ci * wi;
+                        ci = cr * wi + ci * wr;
+                        cr = ncr;
+                    }
+                }
+            }
+        }
+
+        private static float Rms(float[] data, int from, int to)
+        {
+            double sum = 0;
+            to = Mathf.Min(to, data.Length);
+            for (int i = from; i < to; i++) sum += data[i] * data[i];
+            return to > from ? (float)System.Math.Sqrt(sum / (to - from)) : 0f;
+        }
+
+        /// <summary>
+        /// Winning a level moves on to the next one; winning the last starts the run over.
+        ///
+        /// What Enter does from the end screen is decided by GameManager.ContinueTarget from the
+        /// build order, so that is what is walked here, for every level in the Levels table against
+        /// the order the player build really has -- which Test Loading holds to that same table. A
+        /// death, Boot and a scene that is not in the build all stay where they are.
+        ///
+        /// The key press and the load itself need play mode and cannot be driven from here.
+        /// </summary>
+        [MenuItem("Zombie House/Test Progression", false, 62)]
+        public static void TestProgression()
+        {
+            int problems = 0;
+
+            List<string> order = EditorBuildSettings.scenes.Where(s => s.enabled)
+                                     .Select(s => Path.GetFileNameWithoutExtension(s.path)).ToList();
+            List<string> levels = Levels.Select(l => Path.GetFileNameWithoutExtension(l.Scene)).ToList();
+
+            foreach (string level in levels)
+            {
+                if (!order.Contains(level))
+                {
+                    Debug.LogError($"[Progress] {level} is not in the build, so nothing can move on to it.");
+                    problems++;
+                }
+            }
+
+            for (int i = 0; i < levels.Count; i++)
+            {
+                string current = levels[i];
+                bool last = i == levels.Count - 1;
+                string want = last ? levels[0] : levels[i + 1];
+
+                string won = GameManager.ContinueTarget(GameState.Won, current, order);
+                if (won != want)
+                {
+                    Debug.LogError($"[Progress] Winning {current} goes to '{won}', not {want}.");
+                    problems++;
+                }
+
+                string died = GameManager.ContinueTarget(GameState.Lost, current, order);
+                if (died != current)
+                {
+                    Debug.LogError($"[Progress] Dying on {current} goes to '{died}' instead of trying {current} again.");
+                    problems++;
+                }
+
+                // The end screen has to say where Enter goes.
+                string prompt = HudController.WinPrompt(current, won, 12);
+                string named = SceneLoader.DisplayName(want);
+                if (!prompt.Contains(named) || last != prompt.Contains("again"))
+                {
+                    Debug.LogError($"[Progress] Winning {current} says \"{prompt}\". It should name {named}" +
+                                   (last ? " and say the run starts again." : " as the next level."));
+                    problems++;
+                }
+            }
+
+            foreach (string notALevel in new[] { "Boot", "Sandbox_Test" })
+            {
+                string won = GameManager.ContinueTarget(GameState.Won, notALevel, order);
+                if (won != notALevel)
+                {
+                    Debug.LogError($"[Progress] Winning in '{notALevel}' goes to '{won}'. Only a level in the build " +
+                                   "moves on; anything else plays again.");
+                    problems++;
+                }
+            }
+
+            if (problems == 0)
+                Debug.Log($"[Progress] PASS — all {levels.Count} levels lead to the next in build order, the last " +
+                          "back to the first, a death replays the level, and the end screen names where Enter goes.");
+            else
+                Debug.LogError($"[Progress] FAIL — {problems} problem(s).");
         }
 
         private static void CreatePlaceholderMaterials()

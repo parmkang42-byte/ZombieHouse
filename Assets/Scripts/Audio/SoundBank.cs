@@ -43,7 +43,10 @@ namespace ZombieHouse.Audio
 
         // The Cormorant. Appended, like everything above it — the six levels that are not
         // being rebuilt keep the indices they were saved with.
-        MusicShip, TensionShip
+        MusicShip, TensionShip,
+
+        // The emergency broadcast on the house's television. Appended, like everything above.
+        NewsBroadcast
     }
 
     /// <summary>
@@ -145,7 +148,9 @@ namespace ZombieHouse.Audio
 
                 { Sfx.MascotGroan,    Many(3, i => MascotGroan(rng, i)) },
                 { Sfx.MascotSqueak,   Many(2, i => MascotSqueak(rng, i)) },
-                { Sfx.PrincessCall,   Many(2, i => PrincessCall(rng, i)) }
+                { Sfx.PrincessCall,   Many(2, i => PrincessCall(rng, i)) },
+
+                { Sfx.NewsBroadcast,  new[] { ToClip("NewsBroadcast", NewsBroadcast(rng), true) } }
             };
         }
 
@@ -2764,6 +2769,211 @@ namespace ZombieHouse.Audio
             MakeSeamless(mix, 0.75f);
             Normalize(mix, 0.32f);
             return ToClip("Ambience", mix, true);
+        }
+
+        // ---- the broadcast ----------------------------------------------------
+
+        /// <summary>Length of the broadcast loop, jingle included.</summary>
+        public const float NewsLoopSeconds = 24f;
+
+        /// <summary>How long the jingle at the top of the loop runs before the bed takes over.</summary>
+        public const float NewsJingleSeconds = 4.4f;
+
+        /// <summary>
+        /// The house's television: the channel's breaking-news jingle, then the urgent bed they
+        /// run under a rolling story, looped -- everything coming out of a small speaker in a
+        /// cheap set, through a signal that is not holding up.
+        ///
+        /// THE JINGLE is the one every news channel has a version of: two stabs on the minor,
+        /// a climb through Bb and C, a suspended chord that holds its breath, and a D major
+        /// landing with the timpani under it. It is the sound of something important about to
+        /// be said, and it is meant to be recognisable before it is heard properly.
+        ///
+        /// THE BED is a pulse in eighths over Dm - Bb - Gm - Dm - A, the A left hanging so the
+        /// loop leans back into the jingle's first stab. No voice: synthesised speech would be
+        /// either unintelligible or a zombie, and the words are on the screen already.
+        ///
+        /// THE SPEAKER is most of why it sounds like a television and not like the score. A
+        /// set's speaker has no bass and no top, so the whole mix is band-limited, driven a
+        /// little, and has static underneath it. Test Breaking News measures the band: take the
+        /// band limit away and it is just music playing in a room.
+        ///
+        /// Public, and returning samples, so the test can measure what the bank would build.
+        /// </summary>
+        public static float[] NewsBroadcast(System.Random rng)
+        {
+            var mix = Buffer(NewsLoopSeconds);
+
+            // --- the jingle -----------------------------------------------------------
+            float[] dMinor = { 146.83f, 174.61f, 220.00f, 293.66f };
+            float[] bFlat  = { 116.54f, 146.83f, 174.61f, 233.08f };
+            float[] cMajor = { 130.81f, 164.81f, 196.00f, 261.63f };
+            float[] dSus4  = { 146.83f, 196.00f, 220.00f, 293.66f };
+            float[] dMajor = { 146.83f, 185.00f, 220.00f, 293.66f };
+
+            AddBrassChord(mix, dMinor, 0.00f, 0.15f, 1.0f);
+            AddBrassChord(mix, dMinor, 0.22f, 0.15f, 1.0f);
+            AddBrassChord(mix, bFlat,  0.44f, 0.30f, 1.0f);
+            AddBrassChord(mix, cMajor, 0.80f, 0.30f, 1.0f);
+            AddBrassChord(mix, dSus4,  1.20f, 0.80f, 1.1f);
+            AddBrassChord(mix, dMajor, 2.05f, 1.90f, 1.3f);
+
+            foreach (float at in new[] { 0.00f, 0.22f, 0.44f, 0.80f, 1.20f })
+                AddTimpani(mix, at < 0.8f ? 110f : 146.83f, at, 0.55f, rng);
+
+            // A roll into the landing, swelling, then the big hit.
+            for (float at = 1.55f; at < 2.02f; at += 0.045f)
+                AddTimpani(mix, 110f, at, 0.12f + 0.35f * (at - 1.55f) / 0.47f, rng);
+            AddTimpani(mix, 146.83f, 2.05f, 0.9f, rng);
+
+            // The bright bell on top that makes it a news sting and not a fanfare.
+            AddNewsChime(mix, 880.00f, 1.20f, 0.20f);
+            AddNewsChime(mix, 1174.66f, 2.05f, 0.26f);
+            AddNewsChime(mix, 1479.98f, 2.17f, 0.18f);
+
+            // --- the bed -----------------------------------------------------------------
+            const float eighth = 0.24f;
+            const float bedStart = 4.6f;
+            float[] roots = { 146.83f, 116.54f, 98.00f, 146.83f, 110.00f };   // D3 Bb2 G2 D3 A2
+            float[][] pads =
+            {
+                new[] { 293.66f, 349.23f, 440.00f },
+                new[] { 293.66f, 349.23f, 466.16f },
+                new[] { 293.66f, 392.00f, 466.16f },
+                new[] { 293.66f, 349.23f, 440.00f },
+                new[] { 277.18f, 329.63f, 440.00f },
+            };
+            float[] pattern = { 1f, 1f, 2f, 1f, 1f, 2f, 1f, 1.5f };
+
+            for (int block = 0; block < roots.Length; block++)
+            {
+                float blockAt = bedStart + block * eighth * 16;
+
+                for (int step = 0; step < 16; step++)
+                {
+                    float at = blockAt + step * eighth;
+                    AddNewsPulse(mix, roots[block] * pattern[step % pattern.Length], at, step % 4 == 0 ? 0.20f : 0.14f);
+                    AddTick(mix, at + eighth * 0.5f, step % 2 == 0 ? 0.05f : 0.035f, rng);
+                }
+
+                var pad = Buffer(eighth * 16);
+                foreach (float f in pads[block])
+                {
+                    AddSaw(pad, f, f, 0.30f, 6);
+                    AddSaw(pad, f * 1.005f, f * 1.005f, 0.22f, 6);
+                }
+                LowPass(pad, 1400f);
+                ApplyEnvelope(pad, 0.45f, 0.8f);
+                DelayInto(mix, pad, blockAt, 0.045f);
+
+                if (block % 2 == 0) AddNewsChime(mix, 1174.66f, blockAt, 0.07f);
+            }
+
+            Normalize(mix, 0.8f);
+
+            // --- the set -------------------------------------------------------------------
+            // Static under everything, continuous so the loop point has nothing to click on, plus
+            // crackle through the weak signal.
+            var hiss = Buffer(NewsLoopSeconds);
+            AddNoise(hiss, 1f, rng);
+            Mix(mix, hiss, 0.045f);
+
+            var crackle = Buffer(NewsLoopSeconds);
+            AddNoise(crackle, 1f, rng);
+            ApplyCrackle(crackle, rng, 9f);
+            Mix(mix, crackle, 0.06f);
+
+            // The set's little amplifier is driven first and the speaker comes after it, as in a real
+            // set: distortion after the band limit would add back difference tones below it.
+            Saturate(mix, 1.6f);
+
+            // The speaker: no bass, no top. Three passes, 18 dB an octave: two left the bed's 98 Hz root at
+            // 12% of the level, which is a bass a four-inch cone does not have.
+            // Filtered as a loop, or the filters start from rest at sample 0 while they are mid-signal
+            // at the end, and the join clicks every time round -- Test Breaking News caught exactly that.
+            BandLimitLooped(mix, 220f, 4200f, 3);
+
+            Normalize(mix, 0.7f);
+            return mix;
+        }
+
+        /// <summary>
+        /// Band-limits a loop so that it still loops. The filters are one-pole and causal, so each
+        /// sample depends on the ones before it; run over the loop alone, sample 0 has no past.
+        /// Running them over the tail of the loop first gives sample 0 the past it has in play.
+        /// </summary>
+        private static void BandLimitLooped(float[] data, float lowHz, float highHz, int passes)
+        {
+            int warm = Mathf.Min(data.Length, Samples(0.5f));
+            var extended = new float[warm + data.Length];
+            System.Array.Copy(data, data.Length - warm, extended, 0, warm);
+            System.Array.Copy(data, 0, extended, warm, data.Length);
+
+            for (int i = 0; i < passes; i++) BandLimit(extended, lowHz, highHz);
+
+            System.Array.Copy(extended, warm, data, 0, data.Length);
+        }
+
+        /// <summary>A brass-section chord: detuned saws, opening up as the note is held.</summary>
+        private static void AddBrassChord(float[] destination, float[] notes, float at, float hold, float gain)
+        {
+            var chord = Buffer(hold + 0.35f);
+            foreach (float f in notes)
+            {
+                AddSaw(chord, f, f, 0.5f, 12);
+                AddSaw(chord, f * 1.006f, f * 1.006f, 0.35f, 12);
+            }
+            SweepLowPass(chord, 1100f, 3800f);
+            ApplyEnvelope(chord, 0.018f, 0.33f);
+            DelayInto(destination, chord, at, gain * 0.28f / notes.Length);
+        }
+
+        /// <summary>A timpani hit: a pitched thump that sags slightly, over a soft mallet.</summary>
+        private static void AddTimpani(float[] destination, float frequency, float at, float gain, System.Random rng)
+        {
+            var hit = Buffer(1.2f);
+            AddSine(hit, frequency * 1.03f, frequency, 0.8f);
+            AddSine(hit, frequency * 1.51f, frequency * 1.49f, 0.3f);
+
+            var mallet = Buffer(1.2f);
+            AddNoise(mallet, 1f, rng);
+            LowPass(mallet, 700f);
+            ApplyPercussiveEnvelope(mallet, 0.001f, 45f);
+            Mix(hit, mallet, 0.5f);
+
+            ApplyPercussiveEnvelope(hit, 0.002f, 4.5f);
+            DelayInto(destination, hit, at, gain * 0.35f);
+        }
+
+        /// <summary>The glassy bell over a news sting.</summary>
+        private static void AddNewsChime(float[] destination, float frequency, float at, float gain)
+        {
+            var bell = Buffer(1.6f);
+            AddSine(bell, frequency, frequency, 0.6f);
+            AddSine(bell, frequency * 2.76f, frequency * 2.76f, 0.18f);
+            AddSine(bell, frequency * 5.40f, frequency * 5.40f, 0.06f);
+            ApplyPercussiveEnvelope(bell, 0.001f, 3.2f);
+            DelayInto(destination, bell, at, gain);
+        }
+
+        /// <summary>One eighth of the urgent bed: a short, dark synth pluck.</summary>
+        private static void AddNewsPulse(float[] destination, float frequency, float at, float gain)
+        {
+            var pluck = Buffer(0.4f);
+            AddSaw(pluck, frequency, frequency, 0.6f, 8);
+            LowPass(pluck, 1600f);
+            ApplyPercussiveEnvelope(pluck, 0.003f, 13f);
+            DelayInto(destination, pluck, at, gain);
+        }
+
+        /// <summary>The clock-tick hat that keeps the bed moving.</summary>
+        private static void AddTick(float[] destination, float at, float gain, System.Random rng)
+        {
+            var tick = Buffer(0.08f);
+            AddNoise(tick, 1f, rng);
+            HighPass(tick, 3000f);
+            ApplyPercussiveEnvelope(tick, 0.0005f, 85f);
+            DelayInto(destination, tick, at, gain);
         }
     }
 }

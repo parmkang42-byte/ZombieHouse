@@ -20,6 +20,9 @@ namespace ZombieHouse.Level
     /// house's navigation counts are the canary for anything added to a level -- a television
     /// must not change where a walker can walk. Test Breaking News checks for colliders, and
     /// Verify Level checks the counts.
+    ///
+    /// SOUND. The channel's jingle, then its breaking-news bed, looped through the set's own small
+    /// speaker (SoundBank.NewsBroadcast). Positional and short-ranged: it belongs to the room.
     /// </summary>
     public class BreakingNewsTV : MonoBehaviour
     {
@@ -46,20 +49,86 @@ namespace ZombieHouse.Level
         [SerializeField] private CanvasGroup screen;
         [SerializeField] private Light glow;
 
+        /// <summary>The set's speaker volume, before the game's master volume.</summary>
+        public const float SpeakerVolume = 0.6f;
+
+        /// <summary>
+        /// Full volume within this distance of the set. About the size of the room it stands in.
+        /// </summary>
+        public const float SpeakerNear = 2f;
+
+        /// <summary>
+        /// Silent past this distance. Far enough to reach the player's start (about 9 m away), and
+        /// short enough that the jingle is a sound in that room, not one heard across the house.
+        /// </summary>
+        public const float SpeakerRange = 15f;
+
         private float _time;
         private float _nextGlitch = 6f;
         private float _glitchLeft;
         private float _tickerWidth;
         private float _glowBase;
+        private AudioSource _speaker;
+        private float _speakerBase;
 
         /// <summary>How far the ticker has scrolled, in canvas pixels. For the test.</summary>
         public float TickerOffset => ticker != null ? ticker.anchoredPosition.x : 0f;
 
         public Light Glow => glow;
 
+        /// <summary>The set's speaker, once the broadcast has started. For the test.</summary>
+        public AudioSource Speaker => _speaker;
+
+        /// <summary>How much of the picture is showing: 1, except while the signal glitches.</summary>
+        public float ScreenAlpha => screen != null ? screen.alpha : 1f;
+
+        /// <summary>The speaker's volume with the signal intact, before any glitch.</summary>
+        public float SpeakerBaseVolume => _speakerBase;
+
+        private void Start()
+        {
+            StartBroadcastAudio(Audio.GameAudio.Get(Audio.Sfx.NewsBroadcast));
+        }
+
         private void Update()
         {
             Tick(Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Puts the broadcast on the set's speaker, from the top: the jingle lands as the level
+        /// opens, while the player is still looking at the screen.
+        ///
+        /// The speaker is made here, at run time, rather than saved into the scene with the rest
+        /// of the set. The clip is synthesised at startup and does not exist to be saved, and
+        /// leaving the scene alone means the house did not have to be rebuilt to give it sound.
+        /// Public so a test can start it without a GameAudio.
+        /// </summary>
+        public void StartBroadcastAudio(AudioClip clip)
+        {
+            if (clip == null) return;
+
+            if (_speaker == null)
+            {
+                var speakerObject = new GameObject("Speaker");
+                speakerObject.transform.SetParent(transform, false);
+                speakerObject.transform.localPosition = new Vector3(0f, 0.35f, 0f);
+
+                // Configured like every other positional sound, then given the set's own range.
+                _speaker = Audio.GameAudio.AttachSource(speakerObject, SpeakerVolume);
+            }
+
+            _speaker.clip = clip;
+            _speaker.loop = true;
+            _speaker.playOnAwake = false;
+            _speaker.spatialBlend = 1f;
+            _speaker.rolloffMode = AudioRolloffMode.Linear;
+            _speaker.minDistance = SpeakerNear;
+            _speaker.maxDistance = SpeakerRange;
+            _speaker.dopplerLevel = 0f;
+            _speakerBase = _speaker.volume;
+
+            if (Application.isPlaying) _speaker.Play();
         }
 
         /// <summary>
@@ -102,6 +171,10 @@ namespace ZombieHouse.Level
                 visible = Random.value < 0.5f ? 0.15f : 0.85f;
             }
             if (screen != null) screen.alpha = visible;
+
+            // The sound goes with the picture. A signal that loses its picture and keeps its
+            // audio is a television with a loose cable, not one losing the station.
+            if (_speaker != null) _speaker.volume = _speakerBase * visible;
 
             if (glow != null)
             {
