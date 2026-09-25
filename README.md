@@ -1029,6 +1029,46 @@ loud against it — because either one alone is easy to satisfy and useless.
 `audibleRange` is untouched. A groan behind you is how you know something is behind you, so it
 is quieter, not shorter-ranged.
 
+### Aiming, and getting the gun out of the way
+
+Aiming used to pull the weapon **up into the middle of the screen** — which is where you are
+looking. Measured from the built geometry, the pistol's front sight sat at y = +0.033 in camera
+space while aiming: above the line of sight, directly over whatever you were trying to hit.
+Aiming also hid the crosshair outright and, through the rifle's scope, filled the sides of the
+screen with solid black. The moment you took aim you lost both the mark you were aiming with
+and everything around it.
+
+The gun now **drops** 9 cm below its aim pose, and the targeting is see-through:
+
+| | Before | After |
+|---|---|---|
+| Pistol's highest point while aiming | +0.033 (above the sight line) | −0.057 |
+| Gatling | above | −0.053 |
+| Uzi | above | −0.088 |
+| Rifle (scope bell) | −0.192 | −0.282 |
+| Crosshair while aiming | hidden | drawn at 0.32 alpha |
+| Scope surround | opaque black | 0.60 alpha |
+| Scope reticle | opaque | 0.80 alpha |
+
+`aimDrop` is **its own serialised field rather than a lower `aimPosition`**, and that is the
+whole reason this needed no scene rebuilt. `aimPosition` is already serialised into eight built
+scenes, so lowering its default would have changed nothing in any of them; a field that has
+never been serialised takes its initialiser everywhere. The day a scene does store a value for
+it, that value wins — which is the right way round for something a designer may want to nudge.
+
+Through the scope the painted crosshair still goes away completely, because the scope has a
+reticle of its own and two marks in the middle of the screen means neither is trusted.
+
+One thing came free with it: **hit markers now appear while you are aiming down the sights.**
+They were gated on the same flag as the crosshair, so taking careful aim used to cost you the
+confirmation that you had hit anything.
+
+**Test Aiming** measures the thing the complaint was actually about: every renderer of every
+weapon in every level is taken into camera space, shifted to where the view model puts it while
+aiming, and its highest corner has to come out below the camera's forward axis. A pose number
+would not have caught a weapon whose sights stand tall above its pivot — and the sights are the
+part that was in the way.
+
 ### Recoil
 
 Every bullet weapon carries a `RecoilProfile`, and three things in it are what make it feel
@@ -1779,7 +1819,7 @@ Space` — and between them they caught four bugs that were invisible by reading
 into white noise, a foot that tilted with the shin, a sole measured from bounds that grow when
 it tilts, and 7 of 8 levels sitting twelve times too dark after the colour space flip.
 
-### Stage 15 — the ground and the voices ✅
+### Stage 15 — the ground, the voices and the sights ✅
 - **Eight surfaces underfoot** instead of one clip for the whole game, chosen from the floor's
   own material by a downward ray, for the player and for every walker. See
   [What the ground sounds like](#what-the-ground-sounds-like). **Test Footsteps** samples every level's
@@ -1790,6 +1830,11 @@ it tilts, and 7 of 8 levels sitting twelve times too dark after the colour space
   formant-shaped, with throat clicks and an ending that is swallowed rather than faded. The
   alert and the attack kept their level, so the range between unaware and *it has seen you*
   went from narrow to 2.2×. Ambience and the fallback footstep came down with the groan.
+- **Aiming gets the gun out of the way**: 9 cm lower, measured to sit clear of the line of
+  sight on all four weapons, and the targeting is see-through instead of hidden — the crosshair
+  thins to 0.32 alpha, the scope's surround to 0.60. Done with a new serialised field, so it
+  reached all eight built scenes without rebuilding one. **Test Aiming** measures the weapons'
+  real geometry rather than their pose numbers.
 
 ### Stage 3 — systems depth
 - Multiple weapons + switching (shotgun for corridors, rifle for the long spine).

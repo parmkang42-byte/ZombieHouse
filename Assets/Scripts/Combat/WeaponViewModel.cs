@@ -17,6 +17,21 @@ namespace ZombieHouse.Combat
         [SerializeField] private Vector3 aimPosition = new Vector3(0f, -0.062f, 0.34f);
         [SerializeField] private float aimLerpSpeed = 14f;
 
+        /// <summary>
+        /// How far below its aim pose the gun sits while you are actually aiming.
+        ///
+        /// Aiming used to bring the weapon up into the middle of the screen, which is where you are
+        /// looking: the thing you are trying to hit spent the shot behind the slide. It drops instead
+        /// now, and what you aim with is the reticle.
+        ///
+        /// A SEPARATE FIELD RATHER THAN A LOWER aimPosition, because aimPosition is serialised into
+        /// eight built scenes and lowering the default would change nothing in any of them. A field
+        /// that has never been serialised takes its initialiser everywhere, so this one change
+        /// reaches every weapon in every level with no scene rebuilt. The day a scene does store it,
+        /// it wins -- which is the right way round for something a designer may want to nudge.
+        /// </summary>
+        [SerializeField] private float aimDrop = 0.09f;
+
         [Header("Sway — the gun lags the mouse")]
         [SerializeField] private float swayAmount = 0.014f;
         [SerializeField] private float swayRotationDegrees = 3.2f;
@@ -65,6 +80,12 @@ namespace ZombieHouse.Combat
             aimPosition = localPosition;
         }
 
+        /// <summary>Where the gun really goes when you aim: the pose, dropped clear of the sight.</summary>
+        public Vector3 AimPose => aimPosition + Vector3.down * aimDrop;
+
+        /// <summary>The pose before the drop -- what the scene or ConfigureAimPose asked for.</summary>
+        public Vector3 ConfiguredAimPose => aimPosition;
+
         private void Awake()
         {
             _restPosition = transform.localPosition;
@@ -106,11 +127,12 @@ namespace ZombieHouse.Combat
             Vector3 basePosition = _restPosition;
             Quaternion baseRotation = _restRotation;
 
-            // Aiming pulls the gun to the centre of the screen and kills the bob.
+            // Aiming settles the gun low and kills the bob.
             if (weapon != null && weapon.IsAiming)
             {
-                basePosition = Vector3.Lerp(transform.localPosition, aimPosition, aimLerpSpeed * dt);
-                basePosition = Vector3.Lerp(basePosition, aimPosition, 0.5f);
+                Vector3 pose = AimPose;
+                basePosition = Vector3.Lerp(transform.localPosition, pose, aimLerpSpeed * dt);
+                basePosition = Vector3.Lerp(basePosition, pose, 0.5f);
             }
 
             Vector3 reloadOffset = Vector3.zero;

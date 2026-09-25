@@ -41,6 +41,24 @@ namespace ZombieHouse.UI
 
         private const int IndicatorCount = 4;
 
+        /// <summary>
+        /// What the targeting looks like while you are aiming: see-through.
+        ///
+        /// Aiming used to hide the crosshair outright and fill the sides of a scoped screen with
+        /// solid black, so the moment you took aim you lost both the mark you were aiming with and
+        /// everything around it -- which is the moment you most want to see. Now the crosshair thins
+        /// to a ghost of itself and the scope's surround is glass rather than paint: still obviously
+        /// a sight picture, still showing you what is walking in from the side.
+        ///
+        /// Three values rather than one, because they are not the same job. The crosshair is a mark
+        /// you look past and can afford to be faint; the surround is most of the screen and at much
+        /// under a half stops reading as a scope at all; the reticle is the thing you are aiming
+        /// with and only comes down enough to stop it sitting on top of the target.
+        /// </summary>
+        private const float AimingCrosshairAlpha = 0.35f;
+        private const float ScopeSurroundAlpha = 0.6f;
+        private const float ScopeReticleAlpha = 0.8f;
+
         private Canvas _canvas;
         private Image _vignette;
         private Image[] _crosshairBars;   // left, right, up, down
@@ -168,7 +186,9 @@ namespace ZombieHouse.UI
 
             // Side fills pinned to each edge and stretched vertically; only their width
             // changes, which keeps them correct at any aspect ratio.
-            Image left = CreateImage("ScopeFillLeft", _scopeRoot.transform, Color.black);
+            Color surround = new Color(0f, 0f, 0f, ScopeSurroundAlpha);
+
+            Image left = CreateImage("ScopeFillLeft", _scopeRoot.transform, surround);
             _scopeFillLeft = left.rectTransform;
             _scopeFillLeft.anchorMin = new Vector2(0f, 0f);
             _scopeFillLeft.anchorMax = new Vector2(0f, 1f);
@@ -176,7 +196,7 @@ namespace ZombieHouse.UI
             _scopeFillLeft.anchoredPosition = Vector2.zero;
             _scopeFillLeft.sizeDelta = new Vector2(0f, 0f);
 
-            Image right = CreateImage("ScopeFillRight", _scopeRoot.transform, Color.black);
+            Image right = CreateImage("ScopeFillRight", _scopeRoot.transform, surround);
             _scopeFillRight = right.rectTransform;
             _scopeFillRight.anchorMin = new Vector2(1f, 0f);
             _scopeFillRight.anchorMax = new Vector2(1f, 1f);
@@ -184,7 +204,8 @@ namespace ZombieHouse.UI
             _scopeFillRight.anchoredPosition = Vector2.zero;
             _scopeFillRight.sizeDelta = new Vector2(0f, 0f);
 
-            Image circle = CreateImage("ScopeCircle", _scopeRoot.transform, Color.white);
+            Image circle = CreateImage("ScopeCircle", _scopeRoot.transform,
+                                       new Color(1f, 1f, 1f, ScopeSurroundAlpha));
             circle.sprite = Fx.ProtoTextures.ScopeMask;
             Centre(circle.rectTransform, Vector2.zero, new Vector2(1080f, 1080f));
             _scopeCircle = circle.rectTransform;
@@ -193,6 +214,13 @@ namespace ZombieHouse.UI
             var reticle = new GameObject("Reticle", typeof(RectTransform)).transform;
             reticle.SetParent(_scopeRoot.transform, false);
             Centre((RectTransform)reticle, Vector2.zero, new Vector2(10f, 10f));
+
+            // One group alpha over the whole reticle: the three layers below are balanced against
+            // each other and fading them individually would pull that balance apart.
+            var reticleGroup = reticle.gameObject.AddComponent<CanvasGroup>();
+            reticleGroup.alpha = ScopeReticleAlpha;
+            reticleGroup.interactable = false;
+            reticleGroup.blocksRaycasts = false;
 
             // Three layers, because a reticle has to stay readable against both a bright
             // window and a black corridor:
@@ -274,6 +302,27 @@ namespace ZombieHouse.UI
                 _hitMarker[i].raycastTarget = false;
             }
         }
+
+        /// <summary>
+        /// A targeting colour, thinned while aiming. Static and taking its colour as an argument so
+        /// the fact that aiming makes the mark fainter -- and by how much -- is one line a test can
+        /// measure without standing a canvas up.
+        /// </summary>
+        public static Color Aiming(Color colour, bool aiming)
+        {
+            if (!aiming) return colour;
+            return new Color(colour.r, colour.g, colour.b, colour.a * AimingCrosshairAlpha);
+        }
+
+        /// <summary>
+        /// Whether the painted crosshair is drawn at all. Aiming is deliberately not a reason to
+        /// take it away -- only looking down a scope that has its own reticle is.
+        /// </summary>
+        public static bool ShowCrosshair(bool gameplayActive, bool scoped) => gameplayActive && !scoped;
+
+        /// <summary>What the scope's surround and its reticle are drawn at. For the same reason.</summary>
+        public static float ScopeSurroundOpacity => ScopeSurroundAlpha;
+        public static float ScopeReticleOpacity => ScopeReticleAlpha;
 
         private void BuildDamageIndicators(Transform parent)
         {
@@ -427,9 +476,12 @@ namespace ZombieHouse.UI
 
         private void UpdateCrosshair(float dt)
         {
-            // Aiming means you are using the iron sights, so the painted crosshair goes
-            // away — otherwise the two compete and neither is trusted.
-            bool playing = GameManager.GameplayActive && !(weapon != null && weapon.IsAiming);
+            // Through the rifle's scope the crosshair goes away completely: the scope has a reticle
+            // of its own and two marks in the middle of the screen means neither is trusted. Aiming
+            // anything else keeps it and thins it instead of hiding it -- the mark you are aiming
+            // with is not something to take away at the moment you aim.
+            bool scoped = weapon != null && weapon.IsScoped;
+            bool playing = ShowCrosshair(GameManager.GameplayActive, scoped);
 
             float targetGap = crosshairBaseGap;
             if (weapon != null) targetGap += weapon.CurrentSpread * spreadToPixels;
@@ -438,6 +490,8 @@ namespace ZombieHouse.UI
             Color colour = accent;
             if (weapon != null && weapon.IsReloading) colour = new Color(1f, 0.78f, 0.32f, 0.85f);
             else if (weapon != null && weapon.AmmoInMagazine == 0) colour = danger;
+
+            colour = Aiming(colour, weapon != null && weapon.IsAiming);
 
             float gap = _displayedGap;
             float half = crosshairThickness * 0.5f;
@@ -452,6 +506,8 @@ namespace ZombieHouse.UI
                    new Vector2(crosshairThickness, crosshairLength), colour, playing);
 
             _crosshairDot.enabled = playing;
+            _crosshairDot.color = Aiming(new Color(1f, 1f, 1f, 0.55f),
+                                         weapon != null && weapon.IsAiming);
 
             bool showMarker = Time.time < _hitMarkerUntil;
             Color markerColour = _lastHitCritical ? new Color(1f, 0.45f, 0.2f) : Color.white;

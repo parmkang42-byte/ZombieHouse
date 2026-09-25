@@ -11380,6 +11380,189 @@ namespace ZombieHouse.EditorTools
         }
 
         /// <summary>
+        /// Aiming shows you the target rather than the gun, and what you aim with is see-through.
+        ///
+        /// NOTHING THE GUN IS MADE OF CROSSES THE LINE OF SIGHT. Measured from the built geometry
+        /// rather than from the pose alone: every renderer of every weapon in every level is taken
+        /// into camera space, shifted to where WeaponViewModel puts it while aiming, and its highest
+        /// corner has to come out below the camera's forward axis -- the middle of the screen, which
+        /// is where whatever you are shooting at is. A pose number would not have caught a weapon
+        /// whose sights stand tall above its pivot, and the sights are the part that used to be in
+        /// the way.
+        ///
+        /// AND THE DROP IS WHAT PUTS IT THERE. aimDrop is a field that has never been serialised, so
+        /// it reaches all eight built scenes by taking its initialiser. If that ever stops being true
+        /// -- a scene saves a zero over it, or someone folds the drop back into aimPosition -- this
+        /// asks each weapon what its aim pose is and fails when it is not below the pose it was
+        /// configured with.
+        ///
+        /// TRANSPARENT, NOT GONE. Both ends, because either end is a way of ruining it: the aiming
+        /// crosshair has to be fainter than the hip one and still be drawn, and the scope's surround
+        /// has to be see-through while staying solid enough to read as a scope. The reticle is the
+        /// mark you are aiming with, so it stays clearer than the surround it sits in.
+        /// </summary>
+        [MenuItem("Zombie House/Test Aiming", false, 64)]
+        public static void TestAiming()
+        {
+            int problems = 0;
+            int weapons = 0;
+
+            foreach (var level in Levels)
+            {
+                if (!File.Exists(level.Scene))
+                {
+                    Debug.LogWarning($"[Aim] {level.Tag} has not been built; skipping.");
+                    continue;
+                }
+
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                var camera = Object.FindAnyObjectByType<Camera>();
+                if (camera == null)
+                {
+                    Debug.LogError($"[Aim] {level.Tag} has no camera, so there is no line of sight to be clear of.");
+                    problems++;
+                    continue;
+                }
+
+                foreach (var view in Object.FindObjectsByType<WeaponViewModel>(FindObjectsInactive.Include,
+                                                                              FindObjectsSortMode.None))
+                {
+                    weapons++;
+                    Transform root = view.transform;
+                    Vector3 aim = view.AimPose;
+                    Vector3 configured = view.ConfiguredAimPose;
+
+                    if (aim.y >= configured.y)
+                    {
+                        Debug.LogError($"[Aim] {level.Tag}/{root.name} aims at y={aim.y:0.000}, no lower than the " +
+                                       $"pose it was configured with ({configured.y:0.000}). The drop is not reaching " +
+                                       "this weapon.");
+                        problems++;
+                    }
+
+                    // Camera space, shifted from where the gun rests to where aiming puts it. The
+                    // weapon root is parented to the camera unrotated, so this is a translation.
+                    Vector3 shift = aim - camera.transform.InverseTransformPoint(root.position);
+                    float highest = float.NegativeInfinity;
+                    string highestPart = "(no renderers)";
+
+                    foreach (var renderer in root.GetComponentsInChildren<MeshRenderer>(true))
+                    {
+                        Bounds bounds = renderer.bounds;
+                        for (int corner = 0; corner < 8; corner++)
+                        {
+                            Vector3 world = bounds.center + Vector3.Scale(bounds.extents, new Vector3(
+                                (corner & 1) == 0 ? -1f : 1f,
+                                (corner & 2) == 0 ? -1f : 1f,
+                                (corner & 4) == 0 ? -1f : 1f));
+                            float y = camera.transform.InverseTransformPoint(world).y + shift.y;
+                            if (y > highest) { highest = y; highestPart = renderer.gameObject.name; }
+                        }
+                    }
+
+                    if (float.IsNegativeInfinity(highest))
+                    {
+                        Debug.LogError($"[Aim] {level.Tag}/{root.name} has no geometry to measure.");
+                        problems++;
+                        continue;
+                    }
+
+                    if (level.Tag == Levels[0].Tag)
+                        Debug.Log($"[Aim] {root.name}: aims at y={aim.y:0.000}, highest point while aiming " +
+                                  $"{highest:0.000} ({highestPart}).");
+
+                    if (highest > -AimSightClearance)
+                    {
+                        Debug.LogError($"[Aim] {level.Tag}/{root.name} still reaches y={highest:0.000} while aiming " +
+                                       $"({highestPart}), against a line of sight at 0. The gun is in front of what " +
+                                       "you are shooting at; drop it further.");
+                        problems++;
+                    }
+                }
+            }
+
+            if (weapons == 0)
+            {
+                Debug.LogError("[Aim] No weapons found in any level, so nothing was measured.");
+                problems++;
+            }
+
+            // --- transparent, and still there ---------------------------------------------
+            Color hip = new Color(0.85f, 0.87f, 0.9f, 0.9f);
+            Color aiming = HudController.Aiming(hip, true);
+            Debug.Log($"[Aim] crosshair alpha {hip.a:0.00} at the hip, {aiming.a:0.00} aiming; scope surround " +
+                      $"{HudController.ScopeSurroundOpacity:0.00}, reticle {HudController.ScopeReticleOpacity:0.00}.");
+
+            if (HudController.Aiming(hip, false).a != hip.a)
+            {
+                Debug.LogError("[Aim] Not aiming changes the crosshair's alpha. Only aiming should.");
+                problems++;
+            }
+            if (aiming.a >= hip.a)
+            {
+                Debug.LogError($"[Aim] The crosshair is {aiming.a:0.00} while aiming against {hip.a:0.00} at the hip. " +
+                               "Aiming is supposed to thin it.");
+                problems++;
+            }
+            if (aiming.a < hip.a * 0.15f)
+            {
+                Debug.LogError($"[Aim] The aiming crosshair is down to {aiming.a:0.00}. That is not transparent, " +
+                               "that is gone, and it is the mark you are aiming with.");
+                problems++;
+            }
+            if (!HudController.ShowCrosshair(true, false))
+            {
+                Debug.LogError("[Aim] The crosshair is not drawn while aiming an unscoped weapon. Thinned, not hidden.");
+                problems++;
+            }
+            if (HudController.ShowCrosshair(true, true))
+            {
+                Debug.LogError("[Aim] The crosshair is drawn over the rifle's scope. The scope has its own reticle " +
+                               "and two marks in the middle of the screen means neither is trusted.");
+                problems++;
+            }
+            if (HudController.ScopeSurroundOpacity >= 1f)
+            {
+                Debug.LogError("[Aim] The scope's surround is opaque. Aiming should not blind you to the sides.");
+                problems++;
+            }
+            if (HudController.ScopeSurroundOpacity < 0.4f)
+            {
+                Debug.LogError($"[Aim] The scope's surround is down to {HudController.ScopeSurroundOpacity:0.00}. " +
+                               "Below about a half it stops reading as a scope at all.");
+                problems++;
+            }
+            if (HudController.ScopeReticleOpacity <= HudController.ScopeSurroundOpacity)
+            {
+                Debug.LogError($"[Aim] The reticle ({HudController.ScopeReticleOpacity:0.00}) is no clearer than the " +
+                               $"surround ({HudController.ScopeSurroundOpacity:0.00}). It is the thing you aim with.");
+                problems++;
+            }
+            if (HudController.ScopeReticleOpacity >= 1f)
+            {
+                Debug.LogError("[Aim] The scope's reticle is fully opaque, so it sits on top of the target rather " +
+                               "than over it.");
+                problems++;
+            }
+
+            if (problems == 0)
+                Debug.Log($"[Aim] PASS — {weapons} weapons across the built levels all sit clear of the line of " +
+                          "sight while aiming, and the crosshair, the scope surround and the reticle are all " +
+                          "see-through without being gone.");
+            else
+                Debug.LogError($"[Aim] FAIL — {problems} problem(s).");
+        }
+
+        /// <summary>
+        /// How far below the middle of the screen the highest part of an aimed weapon has to stay,
+        /// in camera-space metres. Not zero: a gun whose sights just touch the centre line is still
+        /// in the way, and at the distances this matters -- a walker at four metres is about a metre
+        /// tall on screen -- a centimetre of clearance at the camera is a comfortable margin.
+        /// </summary>
+        private const float AimSightClearance = 0.01f;
+
+        /// <summary>
         /// Every surface in the game makes its own sound, the game knows which it is standing on,
         /// and the quiet things are quiet while the frightening ones are not.
         ///

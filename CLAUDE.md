@@ -210,8 +210,8 @@ bodies, the verify counts reachability, and neither divided one by the other.
 
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
 checks pass by not running. There is now one shared `Levels` table in `ZombieHouseSetup`
-that `Test Boss`, `Test Safe Start`, `Test Crowding`, `Test Shadows` and `Test Footsteps`
-all walk — add the
+that `Test Boss`, `Test Safe Start`, `Test Crowding`, `Test Shadows`, `Test Footsteps` and
+`Test Aiming` all walk — add the
 level there, with its boss kind and whether it has a roof — plus the bed table in `Test
 Music`, which is separate
 because it is keyed on `Sfx` rather than on a scene. `Test Music`'s summary line names a
@@ -344,6 +344,15 @@ the first level after the last, and the same scene after a death or in any scene
 level in the build. So the build order is now gameplay, not just packaging — `Test Progression`
 walks the `Levels` table against it, and a level missing from the build is a level the one before
 it cannot reach.
+
+**A new serialised field reaches scenes that were already built; a changed default does not.**
+Serialised values live in the scene, so lowering a field's initialiser changes nothing in the eight
+built levels -- but a field that has *never* been serialised is absent from their YAML and takes its
+initialiser everywhere. That is why aiming drops the weapon through a new `aimDrop` field rather
+than through a lower `aimPosition`: one code change, every weapon in every level, no scene rebuilt.
+The same reasoning is why the quieter mix was done by lowering clip peaks in `SoundBank` rather than
+by editing the serialised `volume` fields. Both are the cheap version of the same fact -- **find the
+thing the scenes do not already hold.**
 
 **Test what the player walks on, not what the scene calls it.** `Test Footsteps` samples each level's
 NavMesh at 400 points or more and calls `StepSurfaces.Under` at every sample, which is the lookup the game uses. Its first
