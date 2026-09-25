@@ -247,7 +247,10 @@ namespace ZombieHouse.Enemies
             if (!TakeFromBudget()) return;
 
             _nextFootstepTime = Time.time + minimumInterval;
-            GameAudio.PlayAt(Sfx.Footstep, position, footstepVolume, 0.18f);
+            // Read after the gates above, so a step nobody can hear costs no raycast.
+            Audio.StepSurface? surface = Audio.StepSurfaces.Under(position);
+            GameAudio.PlayAt(Audio.StepSurfaces.Step(surface), position,
+                             footstepVolume * Audio.StepSurfaces.Loudness(surface), 0.18f);
         }
 
         private bool TakeFromBudget()

@@ -46,7 +46,12 @@ namespace ZombieHouse.Audio
         MusicShip, TensionShip,
 
         // The emergency broadcast on the house's television. Appended, like everything above.
-        NewsBroadcast
+        NewsBroadcast,
+
+        // One step sound per surface. Footstep stays as the fallback for ground nothing in
+        // StepSurfaces recognises, and FootstepSand is the sand it always was.
+        FootstepBoards, FootstepTile, FootstepStone, FootstepMetal,
+        FootstepDirt, FootstepGrass, FootstepLeaves
     }
 
     /// <summary>
@@ -150,7 +155,15 @@ namespace ZombieHouse.Audio
                 { Sfx.MascotSqueak,   Many(2, i => MascotSqueak(rng, i)) },
                 { Sfx.PrincessCall,   Many(2, i => PrincessCall(rng, i)) },
 
-                { Sfx.NewsBroadcast,  new[] { ToClip("NewsBroadcast", NewsBroadcast(rng), true) } }
+                { Sfx.NewsBroadcast,  new[] { ToClip("NewsBroadcast", NewsBroadcast(rng), true) } },
+
+                { Sfx.FootstepBoards, Many(4, i => FootstepBoards(rng, i)) },
+                { Sfx.FootstepTile,   Many(4, i => FootstepTile(rng, i)) },
+                { Sfx.FootstepStone,  Many(4, i => FootstepStone(rng, i)) },
+                { Sfx.FootstepMetal,  Many(4, i => FootstepMetal(rng, i)) },
+                { Sfx.FootstepDirt,   Many(4, i => FootstepDirt(rng, i)) },
+                { Sfx.FootstepGrass,  Many(5, i => FootstepGrass(rng, i)) },
+                { Sfx.FootstepLeaves, Many(5, i => FootstepLeaves(rng, i)) }
             };
         }
 
@@ -891,7 +904,7 @@ namespace ZombieHouse.Audio
             ApplyPercussiveEnvelope(creak, 0.004f, 30f);
 
             Mix(data, creak, 0.35f);
-            Normalize(data, 0.34f);
+            Normalize(data, 0.24f);
             return ToClip("Footstep" + variant, data);
         }
 
@@ -942,6 +955,231 @@ namespace ZombieHouse.Audio
             return ToClip("FootstepSand" + variant, shuffle);
         }
 
+        /// <summary>
+        /// Floorboards, and the school's sprung gym floor: a knock with a hollow board under it.
+        /// Two of the four variants creak, because not every board does and a creak on every step
+        /// is a sound effect rather than a house.
+        /// </summary>
+        private static AudioClip FootstepBoards(System.Random rng, int variant)
+        {
+            float length = 0.26f;
+
+            var body = Buffer(length);
+            AddNoise(body, 1f, rng);
+            HighPass(body, 130f);
+            LowPass(body, 1100f + variant * 170f);
+            ApplyPercussiveEnvelope(body, 0.002f, 34f + variant * 3f);
+
+            var knock = Buffer(length);
+            AddSine(knock, 212f - variant * 14f, 104f, 0.8f);
+            ApplyPercussiveEnvelope(knock, 0.003f, 26f);
+            Mix(body, knock, 0.45f);
+
+            // The board itself, ringing in the space under the floor.
+            var hollow = Buffer(length);
+            AddSine(hollow, 318f + variant * 26f, 300f + variant * 26f, 0.5f);
+            ApplyPercussiveEnvelope(hollow, 0.005f, 15f);
+            Mix(body, hollow, 0.13f);
+
+            if (variant >= 2)
+            {
+                var creak = Buffer(length);
+                AddSine(creak, 286f + variant * 18f, 244f, 0.4f, 9f, 0.05f);
+                ApplyPercussiveEnvelope(creak, 0.02f, 11f);
+                Mix(body, creak, 0.16f);
+            }
+
+            Normalize(body, 0.24f);
+            return ToClip("FootstepBoards" + variant, body);
+        }
+
+        /// <summary>
+        /// Linoleum over concrete: the school. Nearly all transient and no body -- a hard tick with
+        /// a corridor's worth of room behind it, which is why an empty school sounds so large.
+        /// </summary>
+        private static AudioClip FootstepTile(System.Random rng, int variant)
+        {
+            float length = 0.22f;
+
+            var tick = Buffer(length);
+            AddNoise(tick, 1f, rng);
+            HighPass(tick, 900f + variant * 130f);
+            LowPass(tick, 7000f);
+            ApplyPercussiveEnvelope(tick, 0.0006f, 68f + variant * 6f);
+
+            var squeak = Buffer(length);
+            AddSine(squeak, 1420f + variant * 110f, 880f, 0.5f);
+            ApplyPercussiveEnvelope(squeak, 0.0004f, 88f);
+            Mix(tick, squeak, 0.26f);
+
+            // The slab under the lino, and only that: concrete gives nothing back.
+            var slab = Buffer(length);
+            AddSine(slab, 152f, 78f, 0.7f);
+            ApplyPercussiveEnvelope(slab, 0.002f, 42f);
+            Mix(tick, slab, 0.24f);
+
+            AddEcho(tick, 0.035f, 0.14f, 2);
+            Normalize(tick, 0.22f);
+            return ToClip("FootstepTile" + variant, tick);
+        }
+
+        /// <summary>Cut stone with grit on it: the pyramid. A scuff, a dull thud and a small room.</summary>
+        private static AudioClip FootstepStone(System.Random rng, int variant)
+        {
+            float length = 0.30f;
+
+            var grit = Buffer(length);
+            AddNoise(grit, 1f, rng);
+            HighPass(grit, 520f + variant * 70f);
+            LowPass(grit, 5200f);
+            ApplyCrackle(grit, rng, 150f + variant * 25f, 0.006f, 0.35f);
+            ApplyPercussiveEnvelope(grit, 0.003f, 26f);
+
+            var thud = Buffer(length);
+            AddSine(thud, 134f - variant * 6f, 68f, 0.8f);
+            ApplyPercussiveEnvelope(thud, 0.0025f, 30f);
+            Mix(grit, thud, 0.5f);
+
+            // Stone rooms answer back. Short and dry: a chamber, not a cathedral.
+            AddEcho(grit, 0.055f, 0.2f, 2);
+            Normalize(grit, 0.21f);
+            return ToClip("FootstepStone" + variant, grit);
+        }
+
+        /// <summary>
+        /// Deck plate: the Cormorant. The loudest surface in the game and the only one that rings
+        /// after the foot has left it -- inharmonic partials, because a steel plate is not a bell
+        /// and a bell would sound like a musical instrument in a corridor.
+        /// </summary>
+        private static AudioClip FootstepMetal(System.Random rng, int variant)
+        {
+            float length = 0.55f;
+
+            var strike = Buffer(length);
+            AddNoise(strike, 1f, rng);
+            HighPass(strike, 1200f);
+            ApplyPercussiveEnvelope(strike, 0.0004f, 58f);
+
+            float[] partials = { 1f, 1.71f, 2.63f, 4.09f };
+            float root = 505f + variant * 42f;
+            for (int i = 0; i < partials.Length; i++)
+            {
+                var ring = Buffer(length);
+                AddSine(ring, root * partials[i], root * partials[i] * 0.995f, 0.6f, 5.5f, 0.004f);
+                ApplyPercussiveEnvelope(ring, 0.001f, 7f + i * 1.6f);
+                Mix(strike, ring, 0.22f / (1f + i));
+            }
+
+            // The plate flexing: what you feel through the deck rather than hear.
+            var boom = Buffer(length);
+            AddSine(boom, 168f, 118f, 0.8f);
+            ApplyPercussiveEnvelope(boom, 0.002f, 9f);
+            Mix(strike, boom, 0.3f);
+
+            Saturate(strike, 1.3f);
+            Normalize(strike, 0.3f);
+            return ToClip("FootstepMetal" + variant, strike);
+        }
+
+        /// <summary>Beaten earth and dust: the town, paths, the ground outside. Soft, and over at once.</summary>
+        private static AudioClip FootstepDirt(System.Random rng, int variant)
+        {
+            float length = 0.24f;
+
+            var body = Buffer(length);
+            AddNoise(body, 1f, rng);
+            LowPass(body, 880f + variant * 120f);
+            ApplyPercussiveEnvelope(body, 0.003f, 30f);
+
+            var thud = Buffer(length);
+            AddSine(thud, 112f, 58f, 0.7f);
+            ApplyPercussiveEnvelope(thud, 0.003f, 27f);
+            Mix(body, thud, 0.45f);
+
+            // A trace of loose dust thrown up, and nothing else: no ring, no room.
+            var dust = Buffer(length);
+            AddNoise(dust, 1f, rng);
+            HighPass(dust, 2600f);
+            ApplyPercussiveEnvelope(dust, 0.004f, 20f);
+            Mix(body, dust, 0.1f);
+
+            Normalize(body, 0.17f);
+            return ToClip("FootstepDirt" + variant, body);
+        }
+
+        /// <summary>
+        /// Grass: Merryland. The quietest surface, and the only one with no transient at all --
+        /// a foot going into grass never strikes anything.
+        /// </summary>
+        private static AudioClip FootstepGrass(System.Random rng, int variant)
+        {
+            float length = 0.32f;
+
+            var swish = Buffer(length);
+            AddNoise(swish, 1f, rng);
+            HighPass(swish, 780f + variant * 90f);
+            LowPass(swish, 5000f + variant * 400f);
+            for (int i = 0; i < swish.Length; i++)
+            {
+                float t = (float)i / swish.Length;
+                swish[i] *= Mathf.Pow(t, 0.5f) * Mathf.Exp(-5.2f * t);
+            }
+
+            var blades = Buffer(length);
+            AddNoise(blades, 1f, rng);
+            HighPass(blades, 3000f);
+            ApplyCrackle(blades, rng, 260f, 0.004f, 0.1f);
+            ApplyPercussiveEnvelope(blades, 0.01f, 12f);
+            Mix(swish, blades, 0.3f);
+
+            // Damp ground taking the weight, well under the grass.
+            var earth = Buffer(length);
+            AddSine(earth, 104f, 62f, 0.6f);
+            ApplyPercussiveEnvelope(earth, 0.006f, 26f);
+            Mix(swish, earth, 0.18f);
+
+            Normalize(swish, 0.14f);
+            return ToClip("FootstepGrass" + variant, swish);
+        }
+
+        /// <summary>
+        /// Leaf litter: the forest and the jungle. A crush rather than a step -- dozens of small
+        /// breaks, which is why it is the surface that most gives away that something is walking.
+        /// </summary>
+        private static AudioClip FootstepLeaves(System.Random rng, int variant)
+        {
+            float length = 0.36f;
+
+            var crush = Buffer(length);
+            AddNoise(crush, 1f, rng);
+            HighPass(crush, 1150f + variant * 120f);
+            LowPass(crush, 8000f);
+            ApplyCrackle(crush, rng, 80f + variant * 14f, 0.012f, 0.22f);
+            for (int i = 0; i < crush.Length; i++)
+            {
+                float t = (float)i / crush.Length;
+                crush[i] *= Mathf.Pow(t, 0.35f) * Mathf.Exp(-4.6f * t);
+            }
+
+            // Wet ground under the litter, and a twig on one variant in five.
+            var loam = Buffer(length);
+            AddNoise(loam, 1f, rng);
+            LowPass(loam, 420f);
+            ApplyPercussiveEnvelope(loam, 0.004f, 22f);
+            Mix(crush, loam, 0.34f);
+
+            if (variant == 3)
+            {
+                var twig = Buffer(length);
+                AddSine(twig, 2400f, 1700f, 0.5f);
+                ApplyPercussiveEnvelope(twig, 0.0004f, 110f);
+                DelayInto(crush, twig, 0.03f, 0.22f);
+            }
+
+            Normalize(crush, 0.19f);
+            return ToClip("FootstepLeaves" + variant, crush);
+        }
+
         private static AudioClip Jump(System.Random rng)
         {
             var data = Buffer(0.18f);
@@ -974,9 +1212,20 @@ namespace ZombieHouse.Audio
         /// The zombie voice: a slow, low human grumble with a wet crackle running
         /// through it — closer to something sputtering in a pan than to a monster roar.
         ///
-        /// Four layers: a very low sawtooth for the vocal cords, a sub-octave chest
-        /// rumble, a gated crackle for the sizzle, and a little breath. Everything is
-        /// heavily low-passed so it sits in the chest rather than the throat.
+        /// Layers: a very low sawtooth for the vocal cords, a sub-octave chest rumble, a gated
+        /// crackle for the sizzle, breath, and a swallow at the end. Everything is heavily
+        /// low-passed so it sits in the chest rather than the throat.
+        ///
+        /// WHY IT IS BREATH-LED AND QUIET. This used to be normalised to 0.40 with breath at a
+        /// tenth of the mix, and it read as a growl: an animal noise, loud enough to place, easy to
+        /// ignore. What makes it frightening instead is *breathing* — the layer that says there is
+        /// a body doing this, not an effect. So breath now runs to nearly half the mix, the throat
+        /// is formant-shaped so the ear keeps trying to hear a word in it, and the whole thing is
+        /// normalised well down. It is the quietest thing a walker does, and the alert and the
+        /// attack were deliberately left loud: the range between them is the scare.
+        ///
+        /// It still has to be gameplay information — a groan behind you is how you know — so the
+        /// audible range in ZombieAudio is untouched. Quieter, not shorter-ranged.
         /// </summary>
         private static AudioClip ZombieGrumble(System.Random rng, float fundamental, float length)
         {
@@ -1003,19 +1252,48 @@ namespace ZombieHouse.Audio
             ApplyCrackle(crackle, rng, crackleDensity, 0.022f, 0.05f);
             ApplyEnvelope(crackle, length * 0.28f, length * 0.45f);
 
+            // Breath: the layer that makes it a body rather than a noise. Shaped like a throat
+            // instead of flat-filtered, and running through the whole clip under everything else.
             var breath = Buffer(length);
             AddNoise(breath, 1f, rng);
-            LowPass(breath, 700f);
-            ApplyEnvelope(breath, length * 0.35f, length * 0.5f);
+            LowPass(breath, 1900f);
+            HighPass(breath, 180f);
+            AddFormants(breath, 420f, 900f, 2100f);
+            ApplyWarble(breath, 22f, 0.5f);
+            ApplyEnvelope(breath, length * 0.3f, length * 0.42f);
+
+            // Two or three clicks somewhere in the throat, at random. Sparse on purpose: a click
+            // every time is a rhythm, and a rhythm is a machine.
+            var clicks = Buffer(length);
+            int clickCount = 2 + rng.Next(0, 2);
+            for (int i = 0; i < clickCount; i++)
+            {
+                var click = Buffer(0.05f);
+                AddNoise(click, 1f, rng);
+                BandLimit(click, 260f, 1500f);
+                ApplyPercussiveEnvelope(click, 0.0008f, 90f);
+                DelayInto(clicks, click, length * (0.15f + 0.7f * (float)rng.NextDouble()), 1f);
+            }
 
             var mix = Buffer(length);
             Mix(mix, voice, 1f);
             Mix(mix, chest, 0.55f + (float)rng.NextDouble() * 0.5f);
             Mix(mix, crackle, 0.18f + (float)rng.NextDouble() * 0.28f);
-            Mix(mix, breath, 0.08f + (float)rng.NextDouble() * 0.16f);
+            Mix(mix, breath, 0.34f + (float)rng.NextDouble() * 0.22f);
+            Mix(mix, clicks, 0.16f);
+
+            // It does not end, it is swallowed: the last fifth drops away early and takes the pitch
+            // with it. A groan that fades out evenly sounds like a fader; this sounds like a throat
+            // closing, and it is the single cheapest unpleasant thing in the whole voice.
+            int swallow = Mathf.Max(1, (int)(mix.Length * 0.2f));
+            for (int i = mix.Length - swallow; i < mix.Length; i++)
+            {
+                float t = (float)(i - (mix.Length - swallow)) / swallow;
+                mix[i] *= Mathf.Pow(1f - t, 2.2f);
+            }
 
             Saturate(mix, 1.4f);
-            Normalize(mix, 0.40f);
+            Normalize(mix, 0.26f);
             return ToClip("ZombieGrumble" + Mathf.RoundToInt(fundamental), mix);
         }
 
@@ -1080,8 +1358,17 @@ namespace ZombieHouse.Audio
             ApplyCrackle(crackle, rng, 42f, 0.02f, 0.07f);
             ApplyEnvelope(crackle, 0.08f, 0.4f);
 
+            // A gasp of breath before the growl: it has seen you and taken air in to make the
+            // noise. The alert keeps its level -- everything quiet around it is what makes this land.
+            var gasp = Buffer(length);
+            AddNoise(gasp, 1f, rng);
+            BandLimit(gasp, 300f, 2600f);
+            AddFormants(gasp, 500f, 1150f, 2400f);
+            ApplyPercussiveEnvelope(gasp, 0.03f, 6f);
+
             Mix(voice, chest, 0.8f);
             Mix(voice, crackle, 0.34f);
+            Mix(voice, gasp, 0.3f);
             Saturate(voice, 1.8f);
             Normalize(voice, 0.58f);
             return ToClip("ZombieAlert", voice);
@@ -1132,7 +1419,7 @@ namespace ZombieHouse.Audio
 
             Mix(voice, breath, 0.3f);
             Saturate(voice, 1.8f);
-            Normalize(voice, 0.7f);
+            Normalize(voice, 0.62f);
             return ToClip("ZombieHurt" + variant, voice);
         }
 
@@ -1150,9 +1437,19 @@ namespace ZombieHouse.Audio
             LowPass(breath, 900f);
             ApplyPercussiveEnvelope(breath, 0.05f, 2.8f);
 
+            // The last of the air leaving after the voice has stopped. Longer than the voice it
+            // follows, so the body is still doing something after it has gone quiet.
+            var rattle = Buffer(length);
+            AddNoise(rattle, 1f, rng);
+            BandLimit(rattle, 220f, 1600f);
+            AddFormants(rattle, 380f, 820f, 1900f);
+            ApplyCrackle(rattle, rng, 14f, 0.05f, 0.3f);
+            ApplyPercussiveEnvelope(rattle, 0.12f, 1.5f);
+
             Mix(voice, breath, 0.35f);
+            Mix(voice, rattle, 0.4f);
             Saturate(voice, 1.6f);
-            Normalize(voice, 0.8f);
+            Normalize(voice, 0.72f);
             return ToClip("ZombieDeath", voice);
         }
 
@@ -2767,7 +3064,7 @@ namespace ZombieHouse.Audio
             Mix(mix, wind, 0.5f);
 
             MakeSeamless(mix, 0.75f);
-            Normalize(mix, 0.32f);
+            Normalize(mix, 0.26f);
             return ToClip("Ambience", mix, true);
         }
 

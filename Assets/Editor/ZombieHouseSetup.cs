@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.AI;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using ZombieHouse.Audio;
 using ZombieHouse.Combat;
 using ZombieHouse.Core;
 using ZombieHouse.Enemies;
@@ -11373,9 +11374,434 @@ namespace ZombieHouse.EditorTools
         private static float Rms(float[] data, int from, int to)
         {
             double sum = 0;
-            to = Mathf.Min(to, data.Length);
+            to = to < 0 || to > data.Length ? data.Length : to;
             for (int i = from; i < to; i++) sum += data[i] * data[i];
             return to > from ? (float)System.Math.Sqrt(sum / (to - from)) : 0f;
+        }
+
+        /// <summary>
+        /// Every surface in the game makes its own sound, the game knows which it is standing on,
+        /// and the quiet things are quiet while the frightening ones are not.
+        ///
+        /// EVERY WALKABLE FLOOR IS NAMED. The surface is read off the floor's material, so a floor
+        /// built from a material StepSurfaces has never heard of falls back to the generic step and
+        /// nothing says so. This samples the NavMesh of all eight levels -- the actual walkable
+        /// ground, the only places a step can ever be taken -- and calls StepSurfaces.Under at each
+        /// sample, exactly as the game does. Anything that comes back unnamed is a failure, and it
+        /// is the check that will catch level nine.
+        ///
+        /// WHY THE NAVMESH AND NOT THE SCENE'S FLOOR OBJECTS. The first version of this test looked
+        /// for renderers called Floor*, Ground or Deck*, and it was wrong twice over: it matched the
+        /// Cormorant's deck lanterns and windows while missing its floor entirely (the ship's plates
+        /// are called Plate_*), and it said nothing about whether a foot could actually find them.
+        /// The NavMesh cannot be wrong about where the player walks, and going through Under()
+        /// exercises the ray, the collider and the material lookup the game really uses.
+        ///
+        /// THE CLIPS ARE DIFFERENT SOUNDS, not one sound at eight volumes. Measured, because
+        /// "eight entries exist in the bank" would pass eight copies of the same clip: tile is
+        /// brighter than boards, leaves and grass brighter than dirt, and the deck plate rings for
+        /// longer than anything else. Those orderings are the design, in the order a listener would
+        /// describe it.
+        ///
+        /// QUIET, WITH A RANGE. The idle groan is the quietest thing a walker does and the alert is
+        /// far louder than it: that gap is the scare, and turning everything down evenly would
+        /// destroy it. The groan also has to be swallowed rather than faded.
+        /// </summary>
+        /// <summary>
+        /// Walkable points to sample per level. The house has 866 NavMesh triangles and the outdoor
+        /// levels several thousand; a few hundred spread evenly across them covers every room and
+        /// every patch of ground without spending a minute per level on raycasts.
+        /// </summary>
+        private const int StepSamplesPerLevel = 400;
+
+        /// <summary>
+        /// How much walkable ground is allowed to name nothing, in total and for any one material.
+        ///
+        /// Not zero, because the NavMesh is a simplification of the geometry and its outer slivers
+        /// hang over wall footings, thresholds and ledges where no floor was ever built: a triangle
+        /// centroid can land there with nothing under it for a metre and a half. Measured, after the
+        /// nine materials this test found were mapped: the house 6 of 433 (four over wall footings,
+        /// two over nothing), the Cormorant 3 of 641, Merryland 2 of 574 on a castle roof, and the
+        /// other five levels none at all.
+        ///
+        /// The per-material share is the one that matters. A whole new floor would show up at 60-90%
+        /// of a level's points and fail on the first run; the boardwalk the town has always had was
+        /// 4.6%, the forest's boulders 6.6%. Anything above 1.5% is a surface someone walks on.
+        /// </summary>
+        private const float StepUnnamedShare = 0.03f;
+        private const float StepUnnamedShareOne = 0.015f;
+
+        /// <summary>
+        /// A strike is over in a moment and a swell is not: the two ends of the one fact that
+        /// separates a hard floor from grass. Measured at 1.2-3.3 ms and 17.9 ms respectively.
+        /// </summary>
+        private const float StepStrikeSeconds = 0.008f;
+        private const float StepSwellSeconds = 0.012f;
+
+        /// <summary>
+        /// How loud the end of the idle groan may be against its own loudest moment. Measured: 0.012
+        /// as it ships, 0.139 with the swallow removed.
+        /// </summary>
+        private const float SwallowedShare = 0.05f;
+
+        [MenuItem("Zombie House/Test Footsteps", false, 63)]
+        public static void TestFootsteps()
+        {
+            int problems = 0;
+
+            // Which surface each level is made of underfoot. Its own table rather than a fifth
+            // column in Levels, because only this test asks -- but it is checked against Levels
+            // below, so a new level cannot quietly skip it.
+            var expected = new Dictionary<string, StepSurface[]>
+            {
+                // Read off the generators: House uses Floor/FloorAlt and Ground, Forest
+                // ForestFloor and Path, Town Dust, School Linoleum/LinoleumAlt and GymFloor,
+                // Pyramid Sandstone/SandstoneAlt/Granite and Sand, Jungle JungleFloor,
+                // Merryland ParkGrass, the Cormorant DeckPlate/DeckPlateAlt.
+                { "House",     new[] { StepSurface.Boards, StepSurface.Dirt } },
+                { "Forest",    new[] { StepSurface.Leaves, StepSurface.Dirt, StepSurface.Stone } },
+                { "Town",      new[] { StepSurface.Dirt, StepSurface.Boards, StepSurface.Stone } },
+                { "School",    new[] { StepSurface.Tile, StepSurface.Boards } },
+                { "Pyramid",   new[] { StepSurface.Stone, StepSurface.Sand } },
+                { "Jungle",    new[] { StepSurface.Leaves, StepSurface.Stone } },
+                { "Merryland", new[] { StepSurface.Grass, StepSurface.Boards, StepSurface.Stone,
+                                       StepSurface.Metal } },
+                { "Cormorant", new[] { StepSurface.Metal } },
+            };
+
+            foreach (var level in Levels)
+            {
+                if (!expected.ContainsKey(level.Tag))
+                {
+                    Debug.LogError($"[Steps] {level.Tag} is not in this test's surface table, so its floors " +
+                                   "are never checked. Add it.");
+                    problems++;
+                }
+            }
+
+            // --- every walkable floor's material is one we can name --------------------------
+            foreach (var level in Levels)
+            {
+                if (!File.Exists(level.Scene))
+                {
+                    Debug.LogWarning($"[Steps] {level.Tag} has not been built; skipping.");
+                    continue;
+                }
+                if (!expected.ContainsKey(level.Tag)) continue;
+
+                EditorSceneManager.OpenScene(level.Scene, OpenSceneMode.Single);
+
+                // Generated and baked, the way every Verify<Level> does it. Opening the scene is not
+                // enough: PlayerSpawn is filled in by the generator at run time and reads (0,0,0) in
+                // a scene that was only opened -- which is why the first version of this check
+                // "passed" seven levels, having quietly measured the ground under the world origin.
+                ILevelSource source = null;
+                foreach (var behaviour in Object.FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include,
+                                                                                 FindObjectsSortMode.None))
+                {
+                    if (behaviour is ILevelSource candidate) { source = candidate; break; }
+                }
+                var baker = Object.FindAnyObjectByType<RuntimeNavMeshBaker>();
+                if (source == null || baker == null)
+                {
+                    Debug.LogError($"[Steps] {level.Tag} has no ILevelSource or no NavMesh baker, so there is no " +
+                                   "way to ask where its ground is.");
+                    problems++;
+                    continue;
+                }
+
+                ProtoMaterials.ClearCache();
+                source.Generate();
+                baker.SetBakeVolume(source.LevelBounds.center, source.LevelBounds.size);
+                baker.Bake();
+                Physics.SyncTransforms();
+
+                NavMeshTriangulation walkable = NavMesh.CalculateTriangulation();
+                int triangles = walkable.indices.Length / 3;
+                if (triangles == 0)
+                {
+                    Debug.LogError($"[Steps] {level.Tag} has no NavMesh, so there is no walkable ground to check.");
+                    problems++;
+                    continue;
+                }
+
+                var unnamed = new Dictionary<string, int>();
+                var found = new Dictionary<StepSurface, int>();
+                int stride = Mathf.Max(1, triangles / StepSamplesPerLevel);
+                int sampled = 0;
+
+                for (int t = 0; t < triangles; t += stride)
+                {
+                    Vector3 at = (walkable.vertices[walkable.indices[t * 3]]
+                                + walkable.vertices[walkable.indices[t * 3 + 1]]
+                                + walkable.vertices[walkable.indices[t * 3 + 2]]) / 3f;
+                    sampled++;
+
+                    StepSurface? surface = StepSurfaces.Under(at);
+                    if (surface.HasValue)
+                    {
+                        found.TryGetValue(surface.Value, out int seen);
+                        found[surface.Value] = seen + 1;
+                    }
+                    else
+                    {
+                        string material = MaterialUnder(at) ?? "(nothing under it)";
+                        unnamed.TryGetValue(material, out int seen);
+                        unnamed[material] = seen + 1;
+                    }
+                }
+
+                string tally = string.Join(", ", found.Select(kv => $"{kv.Key} x{kv.Value}"));
+                Debug.Log($"[Steps] {level.Tag}: {sampled} walkable points of {triangles} triangles — {tally}" +
+                          (unnamed.Count > 0 ? "; UNNAMED " + string.Join(", ", unnamed.Select(kv => kv.Key + " x" + kv.Value)) : ""));
+
+                // Reported whether or not it fails: the names are the useful part.
+                if (unnamed.Count > 0)
+                    Debug.Log($"[Steps] {level.Tag}: {unnamed.Values.Sum()} of {sampled} walkable points name " +
+                              $"nothing — {string.Join(", ", unnamed.Select(kv => kv.Key + " x" + kv.Value))}.");
+
+                if (unnamed.Values.Sum() > sampled * StepUnnamedShare)
+                {
+                    Debug.LogError($"[Steps] {level.Tag} has {unnamed.Values.Sum()} of {sampled} walkable points " +
+                                   $"where no foot can name the ground ({string.Join(", ", unnamed.Keys)}). Those " +
+                                   "steps fall back to the generic clip and nothing else would say so.");
+                    problems++;
+                }
+                foreach (var material in unnamed)
+                {
+                    if (material.Value <= sampled * StepUnnamedShareOne) continue;
+                    Debug.LogError($"[Steps] {level.Tag} is walked on '{material.Key}' at {material.Value} of " +
+                                   $"{sampled} points and StepSurfaces has never heard of it. That is a floor, not " +
+                                   "an edge: give it a surface.");
+                    problems++;
+                }
+                if (found.Count == 0)
+                {
+                    Debug.LogError($"[Steps] {level.Tag}: not one walkable point has ground the game can name.");
+                    problems++;
+                    continue;
+                }
+
+                // A level made of something its table never mentions -- the Cormorant grown a lawn.
+                foreach (StepSurface surface in found.Keys)
+                {
+                    if (expected[level.Tag].Contains(surface)) continue;
+                    Debug.LogError($"[Steps] {level.Tag} is walked on {surface}, which is not in its table " +
+                                   $"({string.Join("/", expected[level.Tag])}). Either the level changed or the " +
+                                   "table is out of date; both are worth knowing.");
+                    problems++;
+                }
+
+                // --- and the lookup finds it from where the player actually stands -----------
+                StepSurface? underfoot = StepSurfaces.Under(source.PlayerSpawn);
+                if (!underfoot.HasValue || !expected[level.Tag].Contains(underfoot.Value))
+                {
+                    Debug.LogError($"[Steps] At {level.Tag}'s player start the ground reads as " +
+                                   $"{(underfoot.HasValue ? underfoot.Value.ToString() : "nothing")}, not one of " +
+                                   $"{string.Join("/", expected[level.Tag])}.");
+                    problems++;
+                }
+            }
+
+            // --- the clips are eight different sounds -----------------------------------------
+            var bank = ZombieHouse.Audio.SoundBank.Build();
+            var surfaces = new[] { StepSurface.Boards, StepSurface.Tile, StepSurface.Stone, StepSurface.Sand,
+                                   StepSurface.Metal, StepSurface.Dirt, StepSurface.Grass, StepSurface.Leaves };
+            var centroid = new Dictionary<StepSurface, float>();
+            var ring = new Dictionary<StepSurface, float>();
+
+            foreach (StepSurface surface in surfaces)
+            {
+                Sfx sfx = StepSurfaces.Step(surface);
+                AudioClip[] variants = bank[sfx];
+
+                if (variants.Length < 4)
+                {
+                    Debug.LogError($"[Steps] {surface} has {variants.Length} variant(s). Fewer than four and " +
+                                   "walking sounds like a loop.");
+                    problems++;
+                }
+
+                var first = Samples(variants[0]);
+                centroid[surface] = SpectralCentroid(first);
+                ring[surface] = RingSeconds(first);
+
+                // Variants that are the same clip twice would pass every ordering check below.
+                for (int a = 0; a < variants.Length; a++)
+                    for (int b = a + 1; b < variants.Length; b++)
+                        if (Mathf.Abs(Rms(Samples(variants[a]), 0, int.MaxValue) -
+                                      Rms(Samples(variants[b]), 0, int.MaxValue)) < 1e-6f)
+                        {
+                            Debug.LogError($"[Steps] {surface} variants {a} and {b} are identical.");
+                            problems++;
+                        }
+
+                Debug.Log($"[Steps] {surface}: centroid {centroid[surface]:0} Hz, rings {ring[surface] * 1000f:0} ms, " +
+                          $"loudness x{StepSurfaces.Loudness(surface):0.00}");
+            }
+
+            problems += Brighter(centroid, StepSurface.Tile, StepSurface.Boards);
+            problems += Brighter(centroid, StepSurface.Leaves, StepSurface.Dirt);
+            problems += Brighter(centroid, StepSurface.Grass, StepSurface.Dirt);
+
+            if (ring[StepSurface.Metal] < ring[StepSurface.Boards] * 1.5f)
+            {
+                Debug.LogError($"[Steps] The deck plate rings for {ring[StepSurface.Metal] * 1000f:0} ms against the " +
+                               $"boards' {ring[StepSurface.Boards] * 1000f:0} ms. Steel should ring well after the foot has gone.");
+                problems++;
+            }
+            // Grass has no transient: a foot going into grass never strikes anything, so the sound
+            // swells instead of starting. Measured as when the loudest sample arrives -- the hard
+            // surfaces are at their loudest within a couple of milliseconds, grass tens of them.
+            //
+            // This replaced a check that grass rings for less than half as long as steel. It failed
+            // (160 ms against 194 ms) and the assertion was the thing that was wrong: RingSeconds
+            // measures how long a sound stays above a tenth of its peak, which for a broadband
+            // rustle is its length, not a ring. Grass, sand and leaves all "ring" for 160-310 ms
+            // and none of them ring at all.
+            // Both ends stated absolutely rather than as a ratio between them: measured, the hard
+            // surfaces are loudest 1.2 ms (tile), 2.2 ms (steel) and 3.3 ms (boards) in, and grass
+            // 17.9 ms in. A ratio against the slowest of the three would have had grass passing by
+            // 1.4 ms, which is no margin at all for a check about a difference you can plainly hear.
+            float grassAttack = AttackSeconds(Samples(bank[Sfx.FootstepGrass][0]));
+            foreach (StepSurface hard in new[] { StepSurface.Boards, StepSurface.Tile, StepSurface.Metal })
+            {
+                float attack = AttackSeconds(Samples(bank[StepSurfaces.Step(hard)][0]));
+                Debug.Log($"[Steps] {hard} is loudest {attack * 1000f:0.0} ms in; grass {grassAttack * 1000f:0.0} ms in.");
+
+                if (attack <= StepStrikeSeconds) continue;
+
+                Debug.LogError($"[Steps] {hard} takes {attack * 1000f:0.0} ms to reach its loudest, over " +
+                               $"{StepStrikeSeconds * 1000f:0} ms. A boot on a hard surface strikes it; that is a " +
+                               "transient, not a swell.");
+                problems++;
+            }
+            if (grassAttack < StepSwellSeconds)
+            {
+                Debug.LogError($"[Steps] Grass is loudest {grassAttack * 1000f:0.0} ms in, under " +
+                               $"{StepSwellSeconds * 1000f:0} ms. A foot going into grass strikes nothing, so the " +
+                               "sound has to swell rather than start.");
+                problems++;
+            }
+
+            // --- quiet, with the range kept --------------------------------------------------
+            float groan = Peak(Samples(bank[Sfx.ZombieIdle][0]));
+            float alert = Peak(Samples(bank[Sfx.ZombieAlert][0]));
+            float step = Peak(Samples(bank[Sfx.FootstepBoards][0]));
+            Debug.Log($"[Steps] groan peak {groan:0.000}, alert peak {alert:0.000} (x{alert / groan:0.0}), " +
+                      $"boards peak {step:0.000}.");
+
+            if (groan > 0.3f || step > 0.3f)
+            {
+                Debug.LogError($"[Steps] The idle groan peaks at {groan:0.000} and a footstep at {step:0.000}. " +
+                               "These are the sounds the house is made of and they are meant to be quiet.");
+                problems++;
+            }
+            if (alert < groan * 1.8f)
+            {
+                Debug.LogError($"[Steps] The alert is only x{alert / groan:0.0} the groan. The gap between what a " +
+                               "walker does unaware and what it does when it sees you is the scare; keep it.");
+                problems++;
+            }
+
+            // --- the groan is swallowed, not faded -------------------------------------------
+            // A fade-out ends proportionally to its envelope; a throat closing ends early and
+            // abruptly. Measured as the last tenth against the loudest tenth of the same clip.
+            //
+            // The threshold is 0.05 because 0.15 did not work: with the swallow taken out the ratio
+            // is 0.139, which passed, because the layers' own envelopes already leave the tail fairly
+            // quiet. Swallowed it is 0.012. An order of magnitude apart, so the bar goes between
+            // them rather than at the top of the range.
+            float[] voice = Samples(bank[Sfx.ZombieIdle][0]);
+            int tenth = Mathf.Max(1, voice.Length / 10);
+            float tail = Rms(voice, voice.Length - tenth, voice.Length);
+            float loudest = 0f;
+            for (int at = 0; at + tenth <= voice.Length; at += tenth)
+                loudest = Mathf.Max(loudest, Rms(voice, at, at + tenth));
+
+            Debug.Log($"[Steps] the groan's last tenth is {tail / loudest:0.000} of its loudest tenth.");
+            if (tail > loudest * SwallowedShare)
+            {
+                Debug.LogError($"[Steps] The groan's last tenth is {tail / loudest:0.000} of its loudest. It is " +
+                               "fading out rather than being swallowed.");
+                problems++;
+            }
+
+            if (problems == 0)
+                Debug.Log($"[Steps] PASS — all {Levels.Length} levels' floors are surfaces the game can name, each " +
+                          "reads correctly from the player's start, the eight step sounds are distinct in the ways " +
+                          "they were designed to be, and the groan is quiet and swallowed while the alert is not.");
+            else
+                Debug.LogError($"[Steps] FAIL — {problems} problem(s).");
+        }
+
+        private static int Brighter(Dictionary<StepSurface, float> centroid, StepSurface high, StepSurface low)
+        {
+            if (centroid[high] > centroid[low]) return 0;
+
+            Debug.LogError($"[Steps] {high} ({centroid[high]:0} Hz) is not brighter than {low} ({centroid[low]:0} Hz).");
+            return 1;
+        }
+
+        private static float Peak(float[] data)
+        {
+            float peak = 0f;
+            foreach (float sample in data) peak = Mathf.Max(peak, Mathf.Abs(sample));
+            return peak;
+        }
+
+        /// <summary>How long the sound takes to reach its loudest sample: strike, or swell.</summary>
+        private static float AttackSeconds(float[] data)
+        {
+            float peak = 0f;
+            int at = 0;
+            for (int i = 0; i < data.Length; i++)
+                if (Mathf.Abs(data[i]) > peak) { peak = Mathf.Abs(data[i]); at = i; }
+            return (float)at / ZombieHouse.Audio.ProceduralAudio.SampleRate;
+        }
+
+        /// <summary>
+        /// The material of the first thing with a renderer under this point, for reporting a
+        /// walkable spot StepSurfaces could not name. Deliberately looks the same way Under does.
+        /// </summary>
+        private static string MaterialUnder(Vector3 foot)
+        {
+            var hits = Physics.RaycastAll(foot + Vector3.up * 0.2f, Vector3.down,
+                                          StepSurfaces.Reach + 0.2f, ~0, QueryTriggerInteraction.Ignore);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+            foreach (RaycastHit hit in hits)
+            {
+                var renderer = hit.collider.GetComponent<Renderer>();
+                if (renderer == null) continue;
+                return renderer.sharedMaterial != null ? renderer.sharedMaterial.name : "(no material)";
+            }
+            return null;
+        }
+
+        /// <summary>Where the weight of the sound sits, in Hz: the ear's "brightness".</summary>
+        private static float SpectralCentroid(float[] data)
+        {
+            double[] spectrum = PowerSpectrum(data, 2048, ZombieHouse.Audio.ProceduralAudio.SampleRate, out float binHz);
+            double weighted = 0, total = 0;
+            for (int k = 1; k < spectrum.Length; k++)
+            {
+                weighted += spectrum[k] * k * binHz;
+                total += spectrum[k];
+            }
+            return total > 0 ? (float)(weighted / total) : 0f;
+        }
+
+        /// <summary>How long the sound stays above a tenth of its peak: how much it rings.</summary>
+        private static float RingSeconds(float[] data)
+        {
+            float peak = Peak(data);
+            if (peak <= 0f) return 0f;
+
+            int last = 0;
+            for (int i = 0; i < data.Length; i++)
+                if (Mathf.Abs(data[i]) > peak * 0.1f) last = i;
+            return (float)last / ZombieHouse.Audio.ProceduralAudio.SampleRate;
         }
 
         /// <summary>

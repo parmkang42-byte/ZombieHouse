@@ -960,6 +960,75 @@ And the snake has no feet. `ZombieAudio.SilenceFootsteps()` turns them off outri
 tap following a snake around came free with reusing the quadruped rig, and it was the most
 obviously wrong sound in the valley.
 
+### What the ground sounds like
+
+Every step in the game used to be one of two clips, and the player's was **sand** — on the
+mansion's floorboards, on the school's lino, on a steel deck. There are eight surfaces now, and
+the game works out which one you are on by looking at it.
+
+| Surface | Sounds like | Relative loudness |
+|---|---|---|
+| Deck plate | a strike, then inharmonic partials ringing on for 190 ms | 1.15 |
+| Lino over concrete | almost pure transient, with a corridor behind it | 1.00 |
+| Floorboards | a knock with a hollow board under it; two variants in four creak | 0.95 |
+| Cut stone | grit, a dull thud, and a small chamber answering | 0.90 |
+| Leaf litter | dozens of small breaks; a twig on one variant in five | 0.80 |
+| Beaten earth | soft, over at once, no ring and no room | 0.70 |
+| Sand | a broadband swell with fine grain and no impact | 0.65 |
+| Grass | the quietest, and the only one with no transient at all | 0.60 |
+
+**The surface is the floor's material, read off a downward ray.** Every floor in the game was
+already built with its own material — `floor`, `linoleum`, `deckplate`, `parkgrass` — so a ray
+from the foot finds the answer without anything storing it. A tag or a component would have
+meant editing all eight level generators and rebuilding all eight scenes to hold a fact the
+geometry already carried.
+
+The cost is that a floor built from a material `StepSurfaces` has never heard of is silently
+unmapped: it falls back to the generic step, and nothing says so. That is what **Test
+Footsteps** is for, and it earned its place immediately. It samples each level's **NavMesh** at 400 points or more
+(the stride is whole-numbered, so in practice 410 to 683) — the actual walkable ground, not the objects whose names happen to start with
+`Floor` — calls the same lookup the game calls, and fails on anything it cannot name. It found
+nine walkable materials nobody had thought to list: the forest's and the jungle's **boulders**
+(6.6% and 8.5% of those levels' walkable ground), the town's **boardwalk**, **adobe** and
+**mesa**, the ship's **hull plating** and catwalk **gratings**, Merryland's **stall decks** and
+**castle walkway**.
+
+Its first version looked for renderers called `Floor*`, `Ground` or `Deck*`, and was wrong
+twice over: it matched the Cormorant's deck lanterns and windows while missing the ship's floor
+entirely, because the plates are called `Plate_*`. It also read `PlayerSpawn` out of a scene it
+had only opened — and `PlayerSpawn` is filled in by the generator at run time, so it was
+quietly measuring the ground under the world origin and calling seven levels correct. The
+NavMesh cannot be wrong about where the player walks.
+
+A small share of walkable points is allowed to name nothing: 3% in total and 1.5% for any one
+material. The NavMesh is a simplification, and its outer slivers hang over wall footings and
+ledges where no floor was ever built. Measured, that allowance is spent on six points in the
+house, three on the ship and two on a castle roof; a whole new floor would show up at 60–90%
+and fail on the first run.
+
+### A quieter, worse-sounding house
+
+The idle groan is the sound the game is mostly made of, and it was **loud** — peaking at 0.40,
+breath at a tenth of the mix. That read as a growl: an animal noise, easy to place and easy to
+ignore. What makes a walker frightening is *breathing*, because breathing says there is a body
+doing this.
+
+So the groan is now breath-led and much quieter — peak **0.26** — with the breath running to
+nearly half the mix, formant-shaped so the ear keeps trying to hear a word in it, two or three
+sparse throat clicks, and an ending that is **swallowed rather than faded**: the last fifth
+drops away early and takes the pitch with it. A groan that fades out evenly sounds like a
+fader; this sounds like a throat closing, and it is the cheapest unpleasant thing in the whole
+voice.
+
+**The alert and the attack kept their level.** Turning everything down evenly would have been
+the obvious reading of "quieter" and it would have destroyed the only thing that matters: the
+alert is now **2.2×** the groan, so the gap between a walker that has not seen you and one that
+has is much wider than it was. Test Footsteps asserts both ends — the groan quiet, the alert
+loud against it — because either one alone is easy to satisfy and useless.
+
+`audibleRange` is untouched. A groan behind you is how you know something is behind you, so it
+is quieter, not shorter-ranged.
+
 ### Recoil
 
 Every bullet weapon carries a `RecoilProfile`, and three things in it are what make it feel
@@ -1423,7 +1492,9 @@ To change how a zombie dies, see `ZombieRagdoll`; setting `ZombieHealth`'s
   of range on most speakers entirely.
 - **Player footsteps are sand now** — a soft broadband swell with a fine grain under it and no
   impact, thump or ring, since sand absorbs all three. Zombies kept the wooden footstep, so
-  the two are easy to tell apart in the dark.
+  the two are easy to tell apart in the dark. *(Superseded in Stage 15: there are eight
+  surfaces now and the game reads which one you are standing on. See
+  [What the ground sounds like](#what-the-ground-sounds-like).)*
 
 ### Stage 3.2 — rifle, toddlers, chandeliers ✅
 - **Fixed: severed limbs left parts floating.** The rigidbody was going on the bone that
@@ -1707,6 +1778,18 @@ it — `Test Skin`, `Test Shadows`, `Test Foot Placement`, `Test Body Meshes`, `
 Space` — and between them they caught four bugs that were invisible by reading: hair aliasing
 into white noise, a foot that tilted with the shin, a sole measured from bounds that grow when
 it tilts, and 7 of 8 levels sitting twelve times too dark after the colour space flip.
+
+### Stage 15 — the ground and the voices ✅
+- **Eight surfaces underfoot** instead of one clip for the whole game, chosen from the floor's
+  own material by a downward ray, for the player and for every walker. See
+  [What the ground sounds like](#what-the-ground-sounds-like). **Test Footsteps** samples every level's
+  NavMesh through the same lookup the game uses and found nine walkable
+  materials nobody had listed — boulders, a boardwalk, adobe, mesa, hull plating, gratings,
+  stall decks, a castle walkway.
+- **A quieter, worse-sounding walker**: the idle groan down from 0.40 to 0.26, breath-led,
+  formant-shaped, with throat clicks and an ending that is swallowed rather than faded. The
+  alert and the attack kept their level, so the range between unaware and *it has seen you*
+  went from narrow to 2.2×. Ambience and the fallback footstep came down with the groan.
 
 ### Stage 3 — systems depth
 - Multiple weapons + switching (shotgun for corridors, rifle for the long spine).

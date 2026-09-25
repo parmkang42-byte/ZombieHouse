@@ -210,7 +210,8 @@ bodies, the verify counts reachability, and neither divided one by the other.
 
 **A new level must be added to the cross-level test lists**, or it is simply skipped and its
 checks pass by not running. There is now one shared `Levels` table in `ZombieHouseSetup`
-that `Test Boss`, `Test Safe Start`, `Test Crowding` and `Test Shadows` all walk — add the
+that `Test Boss`, `Test Safe Start`, `Test Crowding`, `Test Shadows` and `Test Footsteps`
+all walk — add the
 level there, with its boss kind and whether it has a roof — plus the bed table in `Test
 Music`, which is separate
 because it is keyed on `Sfx` rather than on a scene. `Test Music`'s summary line names a
@@ -343,6 +344,20 @@ the first level after the last, and the same scene after a death or in any scene
 level in the build. So the build order is now gameplay, not just packaging — `Test Progression`
 walks the `Levels` table against it, and a level missing from the build is a level the one before
 it cannot reach.
+
+**Test what the player walks on, not what the scene calls it.** `Test Footsteps` samples each level's
+NavMesh at 400 points or more and calls `StepSurfaces.Under` at every sample, which is the lookup the game uses. Its first
+version scanned for renderers named `Floor*`, `Ground` or `Deck*` and was wrong twice: it matched the
+Cormorant's deck lanterns while missing the ship's actual floor (the plates are `Plate_*`), and it
+read `PlayerSpawn` out of a scene it had only opened. `PlayerSpawn` is filled in by the generator at
+run time, so in an opened scene it is `(0,0,0)` -- the check had been measuring the ground under the
+world origin and calling seven levels correct. **Any test that wants a level's spawns, bounds or
+markers has to `Generate()` and bake first, the way every `Verify<Level>` does.** Once it sampled the
+NavMesh it immediately found nine walkable materials nobody had listed, in five different levels.
+
+**`Test Footsteps` has its own per-level surface table** (`expected`, in the test) alongside the
+shared `Levels` table, and it fails if a level in `Levels` is missing from it -- so a ninth level
+cannot skip the check by not being listed.
 
 **The TV's speaker is made at run time.** `BreakingNewsTV.Start` attaches it and loads
 `Sfx.NewsBroadcast`, because the clip is synthesised at startup and cannot be saved into the

@@ -105,7 +105,10 @@ namespace ZombieHouse.Audio
                 else if (_controller.IsSprinting) volume = sprintVolume;
             }
 
-            GameAudio.Play2D(Sfx.FootstepSand, volume, 0.14f);
+            // What is underfoot, not what the last level was: every step in the game used to play
+            // the sand clip, including on the mansion's floorboards.
+            StepSurface? surface = StepSurfaces.Under(transform.position);
+            GameAudio.Play2D(StepSurfaces.Step(surface), volume * StepSurfaces.Loudness(surface), 0.14f);
         }
 
         private void OnJumped()
